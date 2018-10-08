@@ -54,6 +54,19 @@ address_field(
   BTOA =  type_of_address(TOA),
   <<L, BTOA/binary, BNumber/binary>>.
 
+-spec address_field_decimal_len(address_field()) -> binary().
+address_field_decimal_len(
+    #address_field{
+      address_length = L,
+      type_of_address = TOA,
+      address_digits = Digits
+    }) ->
+  LNumber = encode_number_to_binlist(Digits),
+  BNumber = list_to_binary(LNumber),
+  BTOA =  type_of_address(TOA),
+  L1= decimal_to_octet(L),
+  <<L1/binary, BTOA/binary, BNumber/binary>>.
+
 -spec tp_pid(tp_pid()) -> binary().
 tp_pid(#tp_pid{
   two_high_bits = THB,
@@ -189,3 +202,8 @@ encode_number_to_binlist(Result, A, B, []) when is_number(A), is_number(B) ->
 boolean_to_bit(false) -> 0;
 boolean_to_bit(true) -> 1.
 
+-spec decimal_to_octet(byte())->binary().
+decimal_to_octet(B)->
+  R = B rem 10,
+  C = B div 10,
+  <<C:4,R:4>>.
