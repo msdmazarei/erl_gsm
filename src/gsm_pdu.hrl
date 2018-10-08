@@ -57,7 +57,7 @@
   %%requesting a status report.
   tp_rp  :: boolean()
 }).
--type first_octet() :: first_octet().
+-type first_octet() :: #first_octet{}.
 
 -record(type_of_address,{
 %%0 0 0	Unknown
