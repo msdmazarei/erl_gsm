@@ -11,7 +11,7 @@
 
 %% API
 -export([address_field/3, smsc_address_field/2, protocol_identifier/2]).
--export([data_coding_schema/2, simple_pdu/5, simple_pdu/4]).
+-export([data_coding_schema/2, simple_pdu/5, simple_pdu/4,multipart_pdu/5]).
 -export([tpdu_length/1]).
 -export([simple_first_octet/1]).
 -include_lib("gsm_pdu.hrl").
@@ -140,6 +140,33 @@ simple_pdu(international, TARGET_NO, MESSAGE_ENCODING, MSG_BODY) ->
 
     }
   }.
+
+split_packet(Size, P) when byte_size(P) >= Size ->
+  {Chunk, Rest} = split_binary(P, Size),
+  [Chunk | split_packet(Size, Rest)];
+split_packet(_Size, <<>>) ->
+  [];
+split_packet(_Size, P) ->
+  [P].
+
+-spec multipart_pdu(international,list(),a16bit,binary(),byte)->[pdu()].
+multipart_pdu(international, TARGET_NO, a16bit, MSG_BODY,MESSAGE_ID) ->
+  List_of_MSG_BODY = split_packet(65,MSG_BODY),
+  Count = length(List_of_MSG_BODY),
+  io:fwrite("Count:~p~n",[Count]),
+  {Result, _} = lists:mapfoldl(
+    fun(MSG, AIn) ->
+      io:fwrite("MSG:~p AIn:~p ~n~n",[MSG,AIn]),
+      PDU = #pdu{tpdu =TPDU= #tpdu{tp_udl = ORG_USER_DATA}} = simple_pdu(international, TARGET_NO, a16bit, MSG),
+      CSMSH = user_data_header(csms, MESSAGE_ID, Count, AIn),
+      Hs = #dh{length_of_user_data_header = Header_DATA_LENGTH} = data_header([CSMSH]),
+      PDU1 = PDU#pdu{tpdu = TPDU#tpdu{dh = Hs, tp_udl = ORG_USER_DATA + Header_DATA_LENGTH}},
+      {PDU1, AIn + 1}
+    end,
+    1,
+    List_of_MSG_BODY),
+  Result.
+
 
 
 tpdu_length(#tpdu{
