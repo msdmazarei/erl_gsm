@@ -111,7 +111,7 @@
   %% 2-> 16bit
   %% 3-> reserved
   alphabet_indication::byte(),
-  %% 0 -> class 0
+  %% 0 -> class 0 (flash sms)
   %% 1 -> Class 1 Default meaning: ME-specific.
   %% 2 -> Class 2 SIM specific message
   %% 3 -> Class 3 Default meaning: TE specific (see GSM TS 07.05)
