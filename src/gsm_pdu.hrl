@@ -175,7 +175,7 @@
   tp_udl::byte(),
 
   %%TP-User Data
-  tp_ud::string(),
+  tp_ud::binary(),
 
   %%Data Header
   dh::dh()
@@ -187,7 +187,6 @@
   smsc_address:: address_field(),
   tpdu ::tpdu()
 }).
--type pdu()::pdu().
-
--export_type([tpdu/0,first_octet/0,address_field/0,tp_pid/0,tp_dcs/1,tp_scts/1]).
+-type pdu():: #pdu{}.
+-export_type([tpdu/0,first_octet/0,tp_pid/0,tp_dcs/0,tp_scts/0]).
 -export_type([pdu/0]).

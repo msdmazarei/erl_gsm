@@ -10,8 +10,6 @@
 -author("msd").
 
 %% API
--export([type_of_address_to_binary/1, address_field_to_binary/1]).
--export([encode_number_to_binlist/1,address_field_to_binary/1]).
 -include_lib("gsm_pdu.hrl").
 
 
@@ -21,4 +19,4 @@
 
 
 
-serialize_
+

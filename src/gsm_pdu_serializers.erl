@@ -10,7 +10,8 @@
 -author("msd").
 
 %% API
--export([]).
+-export([dh/1,udh/1,tp_scts/1,tp_pid/1,type_of_address/1,first_octet/1,address_field/1]).
+-export([tp_dcs/1,tpdu/1,pdu/1]).
 -include_lib("gsm_pdu.hrl").
 %% SERIALIZATION
 
@@ -48,7 +49,7 @@ address_field(
     }) ->
   LNumber = encode_number_to_binlist(Digits),
   BNumber = list_to_binary(LNumber),
-  BTOA = type_of_address_to_binary(TOA),
+  BTOA =  type_of_address(TOA),
   <<L, BTOA/binary, BNumber/binary>>.
 
 -spec tp_pid(tp_pid()) -> binary().
@@ -63,8 +64,8 @@ tp_pid(#tp_pid{
     TD:5
   >>.
 
--spec tp_dsc(tp_dcs()) -> binary().
-tp_dsc(#tp_dcs{
+-spec tp_dcs(tp_dcs()) -> binary().
+tp_dcs(#tp_dcs{
   compress = C,
   is_bit_0_1_class_meaning = I,
   alphabet_indication = A,
@@ -96,9 +97,69 @@ udh(#udh{
 })->
   <<I,L,D/binary>>.
 
-dh(#dh{length_of_user_data_header = L,
-  headers = HL})->
-  
+-spec dh(dh())->binary().
+dh(#dh{
+  length_of_user_data_header = L,
+  headers = HL})
+  ->
+  Headers = lists:foldl(
+    fun(Elm,A)->
+      <<A/binary,(udh(Elm))/binary>>
+    end,
+    <<>>,
+    HL),
+  <<L,Headers/binary>>.
+
+-spec tpdu(tpdu())->binary().
+tpdu(#tpdu{
+  first_octet =F=#first_octet{tp_udhi = false,tp_vpf = 0},
+  tp_mr = MR,
+  tp_da = DA,
+  tp_pid = PID,
+  tp_dcs = DCS,
+  tp_udl = UDL,
+  tp_ud = UD
+})->
+  <<
+    (first_octet(F))/binary,
+    MR,
+    (address_field(DA))/binary,
+    (tp_pid(PID))/binary,
+    (tp_dcs(DCS))/binary,
+    UDL,
+    UD/binary
+  >>;
+tpdu(#tpdu{
+  first_octet =F=#first_octet{tp_udhi = true,tp_vpf = 0},
+  tp_mr = MR,
+  tp_da = DA,
+  tp_pid = PID,
+  tp_dcs = DCS,
+  tp_udl = UDL,
+  tp_ud = UD,
+  dh=DH
+})->
+  <<
+    (first_octet(F))/binary,
+    MR,
+    (address_field(DA))/binary,
+    (tp_pid(PID))/binary,
+    (tp_dcs(DCS))/binary,
+    UDL,
+    (dh(DH))/binary,
+    UD/binary
+  >>.
+
+
+-spec pdu(pdu())->binary().
+pdu(#pdu{
+  smsc_address = SA,
+  tpdu = TP
+})->
+  <<
+    (address_field(SA))/binary,
+    (tpdu(TP))/binary
+  >>.
 
 %% UTILS
 
