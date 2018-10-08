@@ -127,43 +127,41 @@ dh(#dh{
 
 -spec tpdu(tpdu())->binary().
 tpdu(#tpdu{
-  first_octet =F=#first_octet{tp_udhi = false,tp_vpf = 0},
-  tp_mr = MR,
-  tp_da = DA,
-  tp_pid = PID,
-  tp_dcs = DCS,
-  tp_udl = UDL,
-  tp_ud = UD
-})->
-  <<
-    (first_octet(F))/binary,
-    MR,
-    (address_field(DA))/binary,
-    (tp_pid(PID))/binary,
-    (tp_dcs(DCS))/binary,
-    UDL,
-    UD/binary
-  >>;
-tpdu(#tpdu{
-  first_octet =F=#first_octet{tp_udhi = true,tp_vpf = 0},
+  first_octet =F=#first_octet{tp_udhi = HasHeader,tp_vpf = VPF},
   tp_mr = MR,
   tp_da = DA,
   tp_pid = PID,
   tp_dcs = DCS,
   tp_udl = UDL,
   tp_ud = UD,
-  dh=DH
+  dh = DH,
+  tp_vp = VP
 })->
+  H = case HasHeader of
+        true ->
+          gsm_pdu_serializers:dh(DH);
+        false -> <<>>
+      end,
+  VPV = case VPF of
+         0 -> <<>>;
+         1 -> <<>>;
+         2 -> <<VP>>;
+          3-> <<(gsm_pdu_serializers:tp_scts(VP))>>
+       end,
+
   <<
     (first_octet(F))/binary,
     MR,
     (address_field(DA))/binary,
     (tp_pid(PID))/binary,
     (tp_dcs(DCS))/binary,
+    VPV/binary,
     UDL,
-    (dh(DH))/binary,
+    H/binary,
     UD/binary
   >>.
+
+
 
 
 -spec pdu(pdu())->binary().
@@ -172,7 +170,7 @@ pdu(#pdu{
   tpdu = TP
 })->
   <<
-    (address_field(SA))/binary,
+    (address_field_decimal_len(SA))/binary,
     (tpdu(TP))/binary
   >>.
 
