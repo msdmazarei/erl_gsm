@@ -26,12 +26,14 @@ first_octet(#first_octet{
 
 }) ->
   <<
-    MTI:2,
-    (boolean_to_bit(RD)):1,
-    VPF:2,
-    (boolean_to_bit(SSR)):1,
+    (boolean_to_bit(RP)):1,
     (boolean_to_bit(UDHI)):1,
-    (boolean_to_bit(RP)):1
+
+    (boolean_to_bit(SSR)):1,
+    VPF:2,
+    (boolean_to_bit(RD)):1,
+
+    MTI:2
 
   >>.
 
