@@ -43,6 +43,12 @@ type_of_address(#type_of_address{ton = TON, npi = NPI}) ->
 
 
 -spec address_field(address_field()) -> binary().
+address_field(#address_field{address_length = 0,type_of_address = TOA})->
+  BTOA = case TOA of
+           undefined -> <<>>;
+           _->type_of_address(TOA)
+         end,
+  << 0 , BTOA/binary >>;
 address_field(
     #address_field{
       address_length = L,
@@ -55,6 +61,7 @@ address_field(
   <<L, BTOA/binary, BNumber/binary>>.
 
 -spec address_field_decimal_len(address_field()) -> binary().
+address_field_decimal_len(#address_field{address_length = 0})-> <<0>>;
 address_field_decimal_len(
     #address_field{
       address_length = L,
