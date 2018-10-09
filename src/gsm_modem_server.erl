@@ -15,7 +15,7 @@
 -export([send_AT_command/2,read_from_modem/1]).
 -export([start_link/0]).
 -export([start_link/2]).
--export([enable_pdu_mode/1,send_sms/4]).
+-export([enable_pdu_mode/1,send_sms/4,send_sms/2]).
 %% gen_server callbacks
 -export([init/1,
   handle_call/3,
@@ -40,13 +40,20 @@ read_from_modem(ModemServer)->
   gen_server:call(ModemServer,read_modem).
 enable_pdu_mode(ModemServer)->
   send_AT_command(ModemServer,<< "AT+CMGF=0\r" >>).
-send_sms(ModemServer,TargetNo,Encoding,Msg)->
+
+send_sms(ModemServer,PDU=#pdu{tpdu = TPDU}) when is_record(PDU,pdu)->
+  Len=gsm_pdu:tpdu_length(TPDU),
+  SPDU =bin_to_hex:bin_to_hex( gsm_pdu_serializers:pdu(PDU)),
+  COMMAND = io_lib:format("AT+CMGS=~p\r~s",[Len,SPDU]),
+  send_AT_command(ModemServer,<< (list_to_binary(COMMAND))/binary,26 >>).
+
+send_sms(ModemServer,TargetNo,Encoding,Msg)
+  when is_list(TargetNo),is_atom(Encoding),is_binary(Msg)
+  ->
   PDU=#pdu{tpdu = TPDU}=gsm_pdu:simple_pdu(international,TargetNo,Encoding,Msg),
   Len=gsm_pdu:tpdu_length(TPDU),
   SPDU =bin_to_hex:bin_to_hex( gsm_pdu_serializers:pdu(PDU)),
-  io:fwrite("LEN:~p MSG:~p ~n",[Len,SPDU]),
   COMMAND = io_lib:format("AT+CMGS=~p\r~s",[Len,SPDU]),
-  io:fwrite(COMMAND),
   send_AT_command(ModemServer,<< (list_to_binary(COMMAND))/binary,26 >>).
 
 
