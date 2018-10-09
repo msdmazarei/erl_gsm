@@ -11,9 +11,9 @@
 
 %% API
 -export([address_field/3, smsc_address_field/2, protocol_identifier/2]).
--export([data_coding_schema/2, simple_pdu/5, simple_pdu/4,multipart_pdu/5]).
+-export([data_coding_schema/2, simple_pdu/5, simple_pdu/4, multipart_pdu/5, multipart_pdu/6]).
 -export([tpdu_length/1]).
--export([simple_first_octet/1]).
+-export([simple_first_octet/1,flash_pdu/5]).
 -include_lib("gsm_pdu.hrl").
 
 -spec type_of_address(international|national) -> type_of_address().
@@ -109,6 +109,16 @@ simple_first_octet(COMMAND) ->
     tp_rp = false
   }.
 
+flash_pdu(international, SMS_CENTER_NO, TARGET_NO, MESSAGE_ENCODING, MSG_BODY) ->
+  PDU=#pdu{tpdu = TPDU=#tpdu{tp_dcs = TPDCS}} = simple_pdu(international,SMS_CENTER_NO,TARGET_NO,MESSAGE_ENCODING,MSG_BODY),
+  TPDCS1 = TPDCS#tp_dcs{
+    is_bit_0_1_class_meaning = true,
+    message_class = 0
+  },
+  PDU1 = PDU #pdu{tpdu = TPDU#tpdu{tp_dcs = TPDCS1}},
+  PDU1.
+
+
 -spec simple_pdu(international, list(), list(), a8bit|a16bit, binary()) -> pdu().
 simple_pdu(international, SMS_CENTER_NO, TARGET_NO, MESSAGE_ENCODING, MSG_BODY) ->
   #pdu{
@@ -126,6 +136,7 @@ simple_pdu(international, SMS_CENTER_NO, TARGET_NO, MESSAGE_ENCODING, MSG_BODY) 
     }
   }.
 simple_pdu(international, TARGET_NO, MESSAGE_ENCODING, MSG_BODY) ->
+
   #pdu{
     smsc_address = smsc_address_field(international, ""),
     tpdu = #tpdu{
@@ -148,26 +159,40 @@ split_packet(_Size, <<>>) ->
   [];
 split_packet(_Size, P) ->
   [P].
-
--spec multipart_pdu(international,list(),a16bit,binary(),byte)->[pdu()].
-multipart_pdu(international, TARGET_NO, a16bit, MSG_BODY,MESSAGE_ID) ->
-  List_of_MSG_BODY = split_packet(65,MSG_BODY),
+-spec multipart_pdu(international, list(), list(), a16bit, binary(), byte) -> [pdu()].
+multipart_pdu(international, SMS_CENTER, TARGET_NO, a16bit, MSG_BODY, MESSAGE_ID) ->
+  List_of_MSG_BODY = split_packet(140 - 6, MSG_BODY),
   Count = length(List_of_MSG_BODY),
-  io:fwrite("Count:~p~n",[Count]),
   {Result, _} = lists:mapfoldl(
     fun(MSG, AIn) ->
-      io:fwrite("MSG:~p AIn:~p ~n~n",[MSG,AIn]),
-      PDU = #pdu{tpdu =TPDU= #tpdu{tp_udl = ORG_USER_DATA}} = simple_pdu(international, TARGET_NO, a16bit, MSG),
+
+      PDU = #pdu{
+        tpdu = TPDU = #tpdu{
+          first_octet = FisrtOctet,
+          tp_udl = ORG_USER_DATA
+        }
+      } = simple_pdu(international, SMS_CENTER, TARGET_NO, a16bit, MSG),
+
       CSMSH = user_data_header(csms, MESSAGE_ID, Count, AIn),
       Hs = #dh{length_of_user_data_header = Header_DATA_LENGTH} = data_header([CSMSH]),
-      PDU1 = PDU#pdu{tpdu = TPDU#tpdu{dh = Hs, tp_udl = ORG_USER_DATA + Header_DATA_LENGTH}},
+      PDU1 = PDU#pdu{
+        tpdu = TPDU#tpdu{
+          first_octet = FisrtOctet#first_octet{tp_udhi = true},
+          dh = Hs,
+          tp_udl = ORG_USER_DATA +
+            Header_DATA_LENGTH +
+            1 %% cause of HDL field itsown!
+        }
+      },
       {PDU1, AIn + 1}
     end,
     1,
     List_of_MSG_BODY),
   Result.
 
-
+-spec multipart_pdu(international, list(), a16bit, binary(), byte) -> [pdu()].
+multipart_pdu(international, TARGET_NO, a16bit, MSG_BODY, MESSAGE_ID) ->
+  multipart_pdu(international, "", TARGET_NO, a16bit, MSG_BODY, MESSAGE_ID).
 
 tpdu_length(#tpdu{
   first_octet = #first_octet{
