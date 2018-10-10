@@ -43,7 +43,7 @@ enable_pdu_mode(ModemServer)->
 
 send_sms(ModemServer,PDU=#pdu{tpdu = TPDU}) when is_record(PDU,pdu)->
   Len=gsm_pdu:tpdu_length(TPDU),
-  SPDU =bin_to_hex:bin_to_hex( gsm_pdu_serializers:pdu(PDU)),
+  SPDU = hex:bin_to_hex( gsm_pdu_serializers:pdu(PDU)),
   COMMAND = io_lib:format("AT+CMGS=~p\r~s",[Len,SPDU]),
   send_AT_command(ModemServer,<< (list_to_binary(COMMAND))/binary,26 >>).
 
@@ -52,7 +52,7 @@ send_sms(ModemServer,TargetNo,Encoding,Msg)
   ->
   PDU=#pdu{tpdu = TPDU}=gsm_pdu:simple_pdu(international,TargetNo,Encoding,Msg),
   Len=gsm_pdu:tpdu_length(TPDU),
-  SPDU =bin_to_hex:bin_to_hex( gsm_pdu_serializers:pdu(PDU)),
+  SPDU = hex:bin_to_hex( gsm_pdu_serializers:pdu(PDU)),
   COMMAND = io_lib:format("AT+CMGS=~p\r~s",[Len,SPDU]),
   send_AT_command(ModemServer,<< (list_to_binary(COMMAND))/binary,26 >>).
 
