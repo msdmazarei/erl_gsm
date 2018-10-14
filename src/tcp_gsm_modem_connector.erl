@@ -4,22 +4,19 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 06. Oct 2018 11:16 AM
+%%% Created : 13. Oct 2018 2:08 PM
 %%%-------------------------------------------------------------------
--module(gsm_modem_server).
+-module(tcp_gsm_modem_connector).
 -author("msd").
-
+-include_lib("logger.hrl").
 -behaviour(gen_server).
-
--callback send_to_modem(term(),binary()) -> ok.
--callback receive_from_modem(term()) -> binary().
-
-
+-behaviour(gsm_modem_connector).
 %% API
--export([send_AT_command/2,read_from_modem/1]).
--export([start_link/0]).
--export([start_link/2]).
--export([enable_pdu_mode/1,send_sms/4,send_sms/2]).
+-export([start_link/3]).
+
+%%gsm_modem_connector callbacks
+-export([send_to_modem/2,receive_from_modem/1]).
+
 %% gen_server callbacks
 -export([init/1,
   handle_call/3,
@@ -27,40 +24,27 @@
   handle_info/2,
   terminate/2,
   code_change/3]).
--include_lib("gsm_pdu.hrl").
+
 -define(SERVER, ?MODULE).
 
 -record(state, {
-  network_tcp_socket::gen_tcp:socket()
-
+  server_ip :: list(),
+  server_port :: number(),
+  cell_no :: list(),
+  name :: list(),
+  socket::inet:socket()
 }).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
-
-send_AT_command(ModemServer,Data)->
-  gen_server:call(ModemServer,{send_and_wait_to_reply,Data}).
-read_from_modem(ModemServer)->
-  gen_server:call(ModemServer,read_modem).
-enable_pdu_mode(ModemServer)->
-  send_AT_command(ModemServer,<< "AT+CMGF=0\r" >>).
-
-send_sms(ModemServer,PDU=#pdu{tpdu = TPDU}) when is_record(PDU,pdu)->
-  Len=gsm_pdu:tpdu_length(TPDU),
-  SPDU = hex:bin_to_hex( gsm_pdu_serializers:pdu(PDU)),
-  COMMAND = io_lib:format("AT+CMGS=~p\r~s",[Len,SPDU]),
-  send_AT_command(ModemServer,<< (list_to_binary(COMMAND))/binary,26 >>).
-
-send_sms(ModemServer,TargetNo,Encoding,Msg)
-  when is_list(TargetNo),is_atom(Encoding),is_binary(Msg)
-  ->
-  PDU=#pdu{tpdu = TPDU}=gsm_pdu:simple_pdu(international,TargetNo,Encoding,Msg),
-  Len=gsm_pdu:tpdu_length(TPDU),
-  SPDU = hex:bin_to_hex( gsm_pdu_serializers:pdu(PDU)),
-  COMMAND = io_lib:format("AT+CMGS=~p\r~s",[Len,SPDU]),
-  send_AT_command(ModemServer,<< (list_to_binary(COMMAND))/binary,26 >>).
-
+send_to_modem(Pid,Data)->
+  R=gen_server:call(Pid,{send_data,Data}),
+  ?MLOG(?LOG_LEVEL_DEBUG,"TCP_MODEM_CONNECTOR:send_to_modem - Sent Data: ~p~n",[Data]),
+  R.
+receive_from_modem(Pid)->
+  {read_data,D } = gen_server:call(Pid,read_data),
+  D.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -68,13 +52,10 @@ send_sms(ModemServer,TargetNo,Encoding,Msg)
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link() ->
+-spec(start_link(string(),number(),atom()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
-
-start_link(IpAddress,Port) ->
-  gen_server:start_link({local,?SERVER},?MODULE,{IpAddress,Port},[]).
+start_link(ServerIp,ServerPort,CellNo) ->
+  gen_server:start_link({local, CellNo}, ?MODULE, [ServerIp,ServerPort,CellNo,CellNo], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -91,14 +72,23 @@ start_link(IpAddress,Port) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
--spec(init({TargetIp::binary(),TargetPort::integer()}) ->
+-spec(init(Args :: term()) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
-init({TargetIp,TargetPort})->
-   case  gen_tcp:connect(TargetIp,TargetPort,[binary,{active, false}]) of
-     {ok,Sock}->{ok,#state{network_tcp_socket = Sock}};
-     {error,Reason}-> {stop,Reason}
-   end.
+init([ServerIp,ServerPort,CellNo,Name]) ->
+  case  gen_tcp:connect(ServerIp,ServerPort,[binary,{active, false}]) of
+    {ok,Sock}->{ok, #state{
+      server_ip = ServerIp,
+      server_port = ServerPort,
+      cell_no = CellNo,
+      name = Name,
+      socket = Sock
+    }};
+    {error,Reason}-> {stop,Reason}
+  end.
+
+
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -114,17 +104,12 @@ init({TargetIp,TargetPort})->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_call({send_and_wait_to_reply, Data},_,State=#state{network_tcp_socket = Sock})->
+handle_call({send_data, Data},_,State=#state{socket = Sock})->
   ok = gen_tcp:send(Sock,Data), %%this will crashed if some problem happen in sending
-  ReadData =  continue_reading(Sock),
-  {reply,{modem_reply, ReadData},State};
-handle_call(read_modem,_,State=#state{network_tcp_socket = Sock})->
+  {reply,ok,State};
+handle_call(read_data,_,State=#state{socket = Sock})->
   ReadData = continue_reading(Sock),
-  {reply,{modem_reply,ReadData},State}.
-%%
-%%handle_call(_Request, _From, State) ->
-%%  {reply, ok, State}.
-
+  {reply,{read_data,ReadData},State}.
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -169,8 +154,7 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term()).
-terminate(_Reason, #state{network_tcp_socket = Sock}) ->
-  gen_tcp:close(Sock),
+terminate(_Reason, _State) ->
   ok.
 
 %%--------------------------------------------------------------------
@@ -190,7 +174,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
 continue_reading(Sock)-> continue_reading(Sock,<<>>).
 
 continue_reading(Sock,R) when is_binary(R)->

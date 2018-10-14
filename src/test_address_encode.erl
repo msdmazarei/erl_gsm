@@ -9,12 +9,14 @@
 -module(test_address_encode).
 -author("msd").
 
--export([international_no/0,no_international_no/0]).
+-export([international_no/0,no_international_no/0,start_simple_gsm_state_machine/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("gsm_pdu.hrl").
 
 
-
+start_simple_gsm_state_machine(IpAddress,Port)->
+  {ok,_} = tcp_gsm_modem_connector:start_link(IpAddress,Port,cellno_09360076133),
+  gsm_state_machine:start_link(gsm_state_09360076133,tcp_gsm_modem_connector,cellno_09360076133).
 
 simple_test() ->
   ?assert(true).
