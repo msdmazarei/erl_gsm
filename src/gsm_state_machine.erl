@@ -197,6 +197,17 @@ process_parts(<<"\r\n+CMGR: ",Remain/binary>>,State = #state{last_sent_command =
     command_result = {Header,Body}
   },
   process_parts(<<"\r\n",Remain2/binary>>,NewState);
+
+
+process_parts(<<"\r\n+CSQ: ",Remain/binary>>,State=#state{last_sent_command = 'CSQ'})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"CSQ: CALLED WITH REMAIN: ~p~n",[Remain]),
+  {CSQ,<<",",Remain2/binary>>}=string:to_integer(Remain),
+  {CME,<<"\r\n",Remain3/binary>>} = string:to_integer(Remain2),
+  NewState = State#state{
+    command_result =  [CSQ,CME]
+  },
+  process_parts(Remain3,NewState);
+
 process_parts(<<"\r\n+CMTI: ",Remain/binary>>, State = #state{ cmti_events = EVENTS} )->
   ?MLOG(?LOG_LEVEL_DEBUG,"CMTI: CALLED WITH REMAIN: ~p~n",[Remain]),
   <<"\"",STORAGE:2/binary,"\",",MessageIndexStr/binary>> =Remain,
@@ -275,6 +286,16 @@ process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_
 %%                   {keep_state_and_data, Actions}
 %% @end
 %%--------------------------------------------------------------------
+handle_event({call,From},{send,'CSQ'},StateName,
+    State=#state{gsm_modem_connector_module_name = M,gsm_modem_connector_identifier = I,send_status = ?SEND_STATUS_READY})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"CSQ: CALLED FROM ~p~n",[From]),
+  COMMAND = <<"AT+CSQ\r">>,
+  ?MLOG(?LOG_LEVEL_DEBUG,"SENDING CMD:~p~n",[COMMAND]),
+  ok=apply(M,send_to_modem,[I,COMMAND]),
+  ?MLOG(?LOG_LEVEL_DEBUG,"SENT CMD:~p~n",[COMMAND]),
+  NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CSQ', respond_back_to = From , command_result = undefined},
+  {next_state,StateName,NewState};
+
 handle_event({call,From},{send,'CMGR',_},StateName,State=#state{send_status = ?SEND_STATUS_READY,pdu_enable = false})->
   ?MLOG(?LOG_LEVEL_DEBUG,"CMGR: CALLED FROM ~p (NO PDU ENABLED)~n",[From]),
   {next_state,StateName,State,[{reply,From,{error,not_in_pdu_mode}}]};
@@ -286,6 +307,17 @@ handle_event({call,From},{send,'CMGR',MsgIndex},StateName,State=#state{send_stat
   ok=apply(M,send_to_modem,[I,<<(list_to_binary(COMMAND))/binary>>]),
   ?MLOG(?LOG_LEVEL_DEBUG,"SENT CMD:~p~n",[COMMAND]),
   NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CMGR', respond_back_to = From , command_result = undefined},
+  {next_state,StateName,NewState};
+
+
+%%This AT command selects the character set of the mobile equipment. Some possible values are "GSM", "HEX"."IRA", "PCDN", "UCS2","UTF-8" etc.
+handle_event({call,From},{send,'CSCS',CHARSET},StateName,State=#state{send_status = ?SEND_STATUS_READY,gsm_modem_connector_module_name = M,gsm_modem_connector_identifier = I})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"CSCS: CALLED FROM ~p~n",[From]),
+  COMMAND = io_lib:format("AT+CSCS=~p\r",[CHARSET]),
+  ?MLOG(?LOG_LEVEL_DEBUG,"SENDING CMD:~p~n",[COMMAND]),
+  ok=apply(M,send_to_modem,[I,<<(list_to_binary(COMMAND))/binary>>]),
+  ?MLOG(?LOG_LEVEL_DEBUG,"SENT CMD:~p~n",[COMMAND]),
+  NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CSCS', respond_back_to = From , command_result = undefined},
   {next_state,StateName,NewState};
 
 handle_event(
