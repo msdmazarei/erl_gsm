@@ -278,6 +278,7 @@ process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_
 handle_event({call,From},{send,'CMGR',_},StateName,State=#state{send_status = ?SEND_STATUS_READY,pdu_enable = false})->
   ?MLOG(?LOG_LEVEL_DEBUG,"CMGR: CALLED FROM ~p (NO PDU ENABLED)~n",[From]),
   {next_state,StateName,State,[{reply,From,{error,not_in_pdu_mode}}]};
+
 handle_event({call,From},{send,'CMGR',MsgIndex},StateName,State=#state{send_status = ?SEND_STATUS_READY,gsm_modem_connector_module_name = M,gsm_modem_connector_identifier = I,pdu_enable = true})->
   ?MLOG(?LOG_LEVEL_DEBUG,"CMGR: CALLED FROM ~p~n",[From]),
   COMMAND = io_lib:format("AT+CMGR=~p\r",[MsgIndex]),
@@ -286,6 +287,12 @@ handle_event({call,From},{send,'CMGR',MsgIndex},StateName,State=#state{send_stat
   ?MLOG(?LOG_LEVEL_DEBUG,"SENT CMD:~p~n",[COMMAND]),
   NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CMGR', respond_back_to = From , command_result = undefined},
   {next_state,StateName,NewState};
+
+handle_event(
+    {call,From},{send,'CMGS',_},StateName,
+    State=#state{send_status = ?SEND_STATUS_READY,pdu_enable = false})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"CMGS: CALLED FROM ~p (NO PDU ENABLED)~n",[From]),
+  {next_state,StateName,State,[{reply,From,{error,not_in_pdu_mode}}]};
 
 handle_event(
     {call,From},{send,'CMGS',PDU=#pdu{tpdu = TPDU}},StateName,
