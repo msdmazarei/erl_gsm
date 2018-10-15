@@ -29,6 +29,35 @@
 -define(PDU_TYPE_SMS_COMMAND,pdu_type_sms_command).
 
 
+-record(first_octet_deliver, {
+%%Parameter describing the message
+%%type.
+  tp_mti :: integer(),
+
+%%Parameter indicating whether or
+%%not there are more messages to
+%%send
+  tp_mms  :: boolean(),
+
+%%Parameter indicating that Reply
+%%Path exists.
+  tp_rp :: boolean(),
+
+
+
+%%Parameter indicating that the
+%%TP-UD field contains a Header
+tp_udhi:: boolean(),
+
+%%Parameter indicating if the SME
+%%has requested a status report
+  %%false: A status report will not be returned to the SME
+  %%true: A status report will be returned to the SME
+  tp_sri  :: boolean()
+}).
+
+-type first_octet_deliver() :: #first_octet_deliver{}.
+
 -record(first_octet, {
   %%Parameter describing the message type.
   tp_mti :: integer(),
@@ -152,7 +181,29 @@
   headers :: [udh()]
 }).
 -type dh():: #dh{}.
+-record(tpdu_deliver,{
+  first_octet :: first_octet(),
 
+  %%Address of the originating SME
+  tp_oa:: address_field(),
+
+  %%Protocol Identifier
+  tp_pid:: tp_pid(),
+
+  %%Data Coding Scheme
+  tp_dcs:: tp_dcs(),
+
+  %%Parameter identifying time when
+  %%the SC received the message.
+  tp_scts:: tp_scts(),
+
+  %%User Data Length
+  tp_udl::byte(),
+
+  %%TP-User Data
+  tp_ud::binary()
+
+}).
 -record(tpdu,{
   first_octet :: first_octet(),
 
@@ -188,5 +239,5 @@
   tpdu ::tpdu()
 }).
 -type pdu():: #pdu{}.
--export_type([tpdu/0,first_octet/0,tp_pid/0,tp_dcs/0,tp_scts/0]).
+-export_type([tpdu/0,first_octet/0,tp_pid/0,tp_dcs/0,tp_scts/0,first_octet_deliver/0]).
 -export_type([pdu/0]).
