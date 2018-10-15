@@ -382,7 +382,7 @@ handle_event({call,From},{recieved_from_modem, Data},StateName,State=#state{rece
   Actions1=[{reply,From,ok}|Actions],
   %%I DONT KNOW WHY WE NEED THIS BUT MODEMS ARE NOT SO FAST.
   %% use send_after
-  timer:sleep(100),
+  timer:sleep(200),
 %%  Actions1=Actions,
   R=
   {next_state,StateName,NewNewState,Actions1},
