@@ -55,7 +55,9 @@
   respond_back_to :: term(),
   pdu_enable::boolean(),
   pdu_to_send::pdu(),
-  cmti_events :: [cmti_event()]
+
+  cmti_events :: [cmti_event()],
+
   command_result :: any()
 }).
 
@@ -107,6 +109,7 @@ init([GsmModemConnectorModuleName,GsmModemConnectorIdentifier]) ->
     received_chars = <<>>,
     pdu_enable = false,
     cmti_events = []
+
   }}.
 
 
@@ -217,13 +220,6 @@ process_parts(<<"\r\nERROR\r\n",Remain/binary>>,State=#state{respond_back_to = R
   NewState = State#state{send_status = ready , received_chars = Remain},
   {NState,Acts} = process_parts(Remain,NewState),
   {NState,[{reply,RES_BACK,error}|Acts]};
-process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_BACK, last_sent_command = 'CMGS', last_sent_message_id = MSGID})->
-  ?MLOG(?LOG_LEVEL_DEBUG,"OK PART CALLED FOR CMGS COMMAND. RESPOND BACK TO ~p ~n",[RES_BACK]),
-  NewState = State#state{send_status = ready,received_chars = Remain},
-  {NState,Acts} = process_parts(Remain,NewState),
-  {NState,[{reply,RES_BACK,{ok,MSGID}}|Acts]};
-process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_BACK})->
-  ?MLOG(?LOG_LEVEL_DEBUG,"OK PART CALLED FOR RESPOND BACK TO ~p ~n",[RES_BACK]),
 
 %%process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_BACK, last_sent_command = 'CSQ', csq_cme = CSQCME})->
 %%  ?MLOG(?LOG_LEVEL_DEBUG,"OK PART CALLED FOR CSQ COMMAND. RESPOND BACK TO ~p ~n",[RES_BACK]),
