@@ -189,6 +189,14 @@ until_next_happen(Pattern,Binary)->
 
 process_parts(<<>>,State)-> {State,[]};
 
+process_parts(<<"\r\n+CMGR: ",Remain/binary>>,State = #state{last_sent_command = 'CMGR'})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"CMGR: CALLED WITH REMAIN: ~p~n",[Remain]),
+  [Header,Remain1] = string:split(Remain,<<"\r\n">>),
+  [Body,Remain2] = string:split(Remain1,<<"\r\n">>),
+  NewState = State#state{
+    command_result = {Header,Body}
+  },
+  process_parts(<<"\r\n",Remain2/binary>>,NewState);
 process_parts(<<"\r\n+CMTI: ",Remain/binary>>, State = #state{ cmti_events = EVENTS} )->
   ?MLOG(?LOG_LEVEL_DEBUG,"CMTI: CALLED WITH REMAIN: ~p~n",[Remain]),
   <<"\"",STORAGE:2/binary,"\",",MessageIndexStr/binary>> =Remain,
@@ -267,6 +275,17 @@ process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_
 %%                   {keep_state_and_data, Actions}
 %% @end
 %%--------------------------------------------------------------------
+handle_event({call,From},{send,'CMGR',_},StateName,State=#state{send_status = ?SEND_STATUS_READY,pdu_enable = false})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"CMGR: CALLED FROM ~p (NO PDU ENABLED)~n",[From]),
+  {next_state,StateName,State,[{reply,From,{error,not_in_pdu_mode}}]};
+handle_event({call,From},{send,'CMGR',MsgIndex},StateName,State=#state{send_status = ?SEND_STATUS_READY,gsm_modem_connector_module_name = M,gsm_modem_connector_identifier = I,pdu_enable = true})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"CMGR: CALLED FROM ~p~n",[From]),
+  COMMAND = io_lib:format("AT+CMGR=~p\r",[MsgIndex]),
+  ?MLOG(?LOG_LEVEL_DEBUG,"SENDING CMD:~p~n",[COMMAND]),
+  ok=apply(M,send_to_modem,[I,<<(list_to_binary(COMMAND))/binary>>]),
+  ?MLOG(?LOG_LEVEL_DEBUG,"SENT CMD:~p~n",[COMMAND]),
+  NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CMGR', respond_back_to = From , command_result = undefined},
+  {next_state,StateName,NewState};
 
 handle_event(
     {call,From},{send,'CMGS',PDU=#pdu{tpdu = TPDU}},StateName,
