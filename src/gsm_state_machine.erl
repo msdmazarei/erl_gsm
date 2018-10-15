@@ -55,8 +55,8 @@
   respond_back_to :: term(),
   pdu_enable::boolean(),
   pdu_to_send::pdu(),
-  last_sent_message_id :: integer(),
   cmti_events :: [cmti_event()]
+  command_result :: any()
 }).
 
 %%%===================================================================
@@ -202,7 +202,7 @@ process_parts(<<"\r\n+CMGS: ",Rest/binary>>,State)->
   {MsgNo,<<"\r\n",R/binary>>} = string:to_integer(Rest),
   ?MLOG(?LOG_LEVEL_DEBUG,"CMGS: MSG NO IS ~p~n",[MsgNo]),
   NewState = State#state{
-    last_sent_message_id = MsgNo
+    command_result  = MsgNo
   },
   ?MLOG(?LOG_LEVEL_DEBUG,"UPDATE LAST SENT MESSAGE ID IN STATE~n"),
   process_parts(R,NewState);
@@ -224,9 +224,30 @@ process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_
   {NState,[{reply,RES_BACK,{ok,MSGID}}|Acts]};
 process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_BACK})->
   ?MLOG(?LOG_LEVEL_DEBUG,"OK PART CALLED FOR RESPOND BACK TO ~p ~n",[RES_BACK]),
+
+%%process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_BACK, last_sent_command = 'CSQ', csq_cme = CSQCME})->
+%%  ?MLOG(?LOG_LEVEL_DEBUG,"OK PART CALLED FOR CSQ COMMAND. RESPOND BACK TO ~p ~n",[RES_BACK]),
+%%  NewState = State#state{send_status = ready,received_chars = Remain},
+%%  {NState,Acts} = process_parts(Remain,NewState),
+%%  {NState,[{reply,RES_BACK,{ok,CSQCME}}|Acts]};
+
+process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_BACK, last_sent_command = LAST_COMMAND, command_result =  CMD_RESULT})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"OK PART CALLED FOR ~p COMMAND. RESPOND BACK TO ~p ~n",[LAST_COMMAND,RES_BACK]),
   NewState = State#state{send_status = ready,received_chars = Remain},
   {NState,Acts} = process_parts(Remain,NewState),
-  {NState,[{reply,RES_BACK,ok}|Acts]}.
+  case CMD_RESULT of
+    undefined ->
+      {NState,[{reply,RES_BACK,{ok,ok}}|Acts]};
+    _->
+      {NState,[{reply,RES_BACK,{ok,CMD_RESULT}}|Acts]}
+  end.
+%%
+%%
+%%process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_BACK})->
+%%  ?MLOG(?LOG_LEVEL_DEBUG,"OK PART CALLED FOR RESPOND BACK TO ~p ~n",[RES_BACK]),
+%%  NewState = State#state{send_status = ready,received_chars = Remain},
+%%  {NState,Acts} = process_parts(Remain,NewState),
+%%  {NState,[{reply,RES_BACK,ok}|Acts]}.
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -260,7 +281,7 @@ handle_event(
   ?MLOG(?LOG_LEVEL_DEBUG,"SENDING CMD:~p~n",[COMMAND]),
   ok=apply(M,send_to_modem,[I,<<(list_to_binary(COMMAND))/binary>>]),
   ?MLOG(?LOG_LEVEL_DEBUG,"SENT CMD:~p~n",[COMMAND]),
-  NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CMGS', respond_back_to = From , pdu_to_send = PDU},
+  NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CMGS', respond_back_to = From , pdu_to_send = PDU, command_result = undefined},
   {next_state,StateName,NewState};
 
 handle_event(
@@ -270,8 +291,8 @@ handle_event(
   ok=apply(M,send_to_modem,[I,<<CMD/binary,"\r">>]),
 
   NewState =case Value of
-              0 -> State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CMGF', respond_back_to = From,pdu_enable = true};
-              _ -> State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CMGF', respond_back_to = From,pdu_enable = false}
+              0 -> State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CMGF', respond_back_to = From,pdu_enable = true, command_result = undefined};
+              _ -> State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CMGF', respond_back_to = From,pdu_enable = false, command_result = undefined}
             end,
   {next_state,StateName,NewState};
 
@@ -280,7 +301,7 @@ handle_event({call,From},{send,'AT'},StateName,State=#state{gsm_modem_connector_
   ?MLOG(?LOG_LEVEL_DEBUG,"AT: SENDING AT COMMAND"),
   ok = apply(GSMModule,send_to_modem,[GSMIdenifier,<<"AT\r">>]),
   ?MLOG(?LOG_LEVEL_DEBUG,"AT: AT COMMAND SENT"),
-  NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='AT', respond_back_to = From},
+  NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='AT', respond_back_to = From, command_result = undefined},
   {next_state,StateName,NewState,[]};
 
 handle_event({call,From},{send,_},StateName,State)->
