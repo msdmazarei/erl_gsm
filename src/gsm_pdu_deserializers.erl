@@ -77,6 +77,8 @@ address_field(<<L, Remain/binary>>) when L > 0 ->
       address_digits = case TOA of
                          #type_of_address{ ton=5} ->
                            sms_7bit_encoding:from_7bit(Digits);
+                         #type_of_address{npi = 1}->
+                           decode_binlist_to_number(Digits);
                          _->binary_to_list( Digits)
                        end
     }, Remain2}.
