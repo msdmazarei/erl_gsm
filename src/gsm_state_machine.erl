@@ -202,9 +202,9 @@ process_parts(<<"\r\n+CMGR: ",Remain/binary>>,State = #state{last_sent_command =
   [Header,Remain1] = string:split(Remain,<<"\r\n">>),
   [Body,Remain2] = string:split(Remain1,<<"\r\n">>),
   NewState = State#state{
-    command_result = {Header,Body}
+    command_result = {Header,gsm_pdu_deserializers:pdu(hex:hexstr_to_bin( binary_to_list(Body)))}
   },
-  process_parts(<<"\r\n",Remain2/binary>>,NewState);
+  process_parts(<<Remain2/binary>>,NewState);
 
 
 process_parts(<<"\r\n+CSQ: ",Remain/binary>>,State=#state{last_sent_command = 'CSQ'})->
