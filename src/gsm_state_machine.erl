@@ -294,6 +294,16 @@ process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_
 %%                   {keep_state_and_data, Actions}
 %% @end
 %%--------------------------------------------------------------------
+handle_event({call,From},{send,'CMGD',MSGINX},StateName,State=#state{gsm_modem_connector_module_name = M,gsm_modem_connector_identifier = I,send_status = ?SEND_STATUS_READY})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"CMGD: CALLED FROM ~p~n",[From]),
+  COMMAND_L = io_lib:format("AT+CMGD=~p\r",[MSGINX]),
+  COMMAND= list_to_binary(COMMAND_L),
+  ?MLOG(?LOG_LEVEL_DEBUG,"SENDING CMD:~p~n",[COMMAND]),
+  ok=apply(M,send_to_modem,[I,COMMAND]),
+  ?MLOG(?LOG_LEVEL_DEBUG,"SENT CMD:~p~n",[COMMAND]),
+  NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CMGD', respond_back_to = From , command_result = undefined},
+  {next_state,StateName,NewState};
+
 handle_event({call,From},{send,'CPMS?'},StateName,State=#state{gsm_modem_connector_module_name = M,gsm_modem_connector_identifier = I,send_status = ?SEND_STATUS_READY})->
   ?MLOG(?LOG_LEVEL_DEBUG,"CPMS?: CALLED FROM ~p~n",[From]),
   COMMAND = <<"AT+CPMS?\r">>,
