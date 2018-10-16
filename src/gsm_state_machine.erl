@@ -415,10 +415,7 @@ handle_event({call,From},{recieved_from_modem, Data},StateName,State=#state{rece
   {next_state,StateName,NewNewState,Actions1},
   R;
 
-handle_event(E= {call,From} ,EC,SN,S)->
-  io:fwrite(
-    "E:~p , EC:~p, SN:~p,S:~p ~n",[E,EC,SN,S]
-  ),
+handle_event(E= {call,From} ,_,_,S)->
   {next_state,E,S,[{reply,From,ok}]};
 handle_event(_EventType, _EventContent, _StateName, State) ->
   NextStateName = the_next_state_name,
