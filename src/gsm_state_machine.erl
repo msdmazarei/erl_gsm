@@ -188,6 +188,14 @@ until_next_happen(Pattern,Binary)->
 
 
 process_parts(<<>>,State)-> {State,[]};
+process_parts(<<"\r\n+CPMS: ",Remain/binary>>,State = #state{last_sent_command = 'CPMS?'})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"CPMS: CALLED WITH REMAIN: ~p~n",[Remain]),
+  [RES,Remain1] = string:split(Remain,<<"\r\n">>),
+
+  NewState = State#state{
+    command_result = RES
+  },
+  process_parts(<<Remain1/binary>>,NewState);
 
 process_parts(<<"\r\n+CMGR: ",Remain/binary>>,State = #state{last_sent_command = 'CMGR'})->
   ?MLOG(?LOG_LEVEL_DEBUG,"CMGR: CALLED WITH REMAIN: ~p~n",[Remain]),
@@ -286,6 +294,15 @@ process_parts(<<"\r\nOK\r\n",Remain/binary>>,State=#state{respond_back_to = RES_
 %%                   {keep_state_and_data, Actions}
 %% @end
 %%--------------------------------------------------------------------
+handle_event({call,From},{send,'CPMS?'},StateName,State=#state{gsm_modem_connector_module_name = M,gsm_modem_connector_identifier = I,send_status = ?SEND_STATUS_READY})->
+  ?MLOG(?LOG_LEVEL_DEBUG,"CPMS?: CALLED FROM ~p~n",[From]),
+  COMMAND = <<"AT+CPMS?\r">>,
+  ?MLOG(?LOG_LEVEL_DEBUG,"SENDING CMD:~p~n",[COMMAND]),
+  ok=apply(M,send_to_modem,[I,COMMAND]),
+  ?MLOG(?LOG_LEVEL_DEBUG,"SENT CMD:~p~n",[COMMAND]),
+  NewState = State#state{send_status = ?SEND_STATUS_WAIT,last_sent_command ='CPMS?', respond_back_to = From , command_result = undefined},
+  {next_state,StateName,NewState};
+
 handle_event({call,From},{send,'CSQ'},StateName,
     State=#state{gsm_modem_connector_module_name = M,gsm_modem_connector_identifier = I,send_status = ?SEND_STATUS_READY})->
   ?MLOG(?LOG_LEVEL_DEBUG,"CSQ: CALLED FROM ~p~n",[From]),
