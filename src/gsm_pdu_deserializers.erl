@@ -92,7 +92,7 @@ address_field_decimal_len(
 ) ->
   L = octet_to_deciaml(L1) - 1,
   <<BNumber:L/binary, Remain1/binary>> = Remain,
-  TOA = type_of_address(BTOA),
+  {TOA,_} = type_of_address(BTOA),
   Digits = decode_binlist_to_number(BNumber),
   {#address_field{
     address_length = L,
