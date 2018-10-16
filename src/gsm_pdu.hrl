@@ -201,9 +201,14 @@ tp_udhi:: boolean(),
   tp_udl::byte(),
 
   %%TP-User Data
-  tp_ud::binary()
+  tp_ud::binary(),
+
+%%Data Header
+dh::dh()
 
 }).
+-type tpdu_deliver()::#tpdu_deliver{}.
+
 -record(tpdu,{
   first_octet :: first_octet(),
 
@@ -236,8 +241,8 @@ tp_udhi:: boolean(),
 
 -record(pdu, {
   smsc_address:: address_field(),
-  tpdu ::tpdu()
+  tpdu ::tpdu()|tpdu_deliver()
 }).
 -type pdu():: #pdu{}.
--export_type([tpdu/0,first_octet/0,tp_pid/0,tp_dcs/0,tp_scts/0,first_octet_deliver/0]).
+-export_type([tpdu/0,first_octet/0,tp_pid/0,tp_dcs/0,tp_scts/0,first_octet_deliver/0,tpdu_deliver/0]).
 -export_type([pdu/0]).
