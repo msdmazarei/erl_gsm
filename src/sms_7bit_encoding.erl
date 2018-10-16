@@ -42,6 +42,8 @@ to_7bit(<<Char1:8,Char2:8,In/binary>>,Out,Cntr)->
 %% ---------------------------------------------------------------------
 %% Output:  String containing only ASCII characters
 %% ---------------------------------------------------------------------
+
+
 from_7bit(List) when is_list(List) -> from_7bit(list_to_binary(List));
 from_7bit(<<>>) -> [];
 from_7bit(Bin) ->
@@ -65,3 +67,15 @@ from_7bit(<<Byte:8,In/binary>>,<<CharI>>,Out,Cntr) ->
   Char = (Byte bsl (Cntr - 1)) bor CharI,
   CharN = Byte bsr (8 - Cntr),
   from_7bit(In,<<CharN>>,<<Out/binary,0:1,Char:7>>,Cntr+1).
+
+
+%when we have padding we should consider padding bits.
+%%this added by msd mazarei
+%% S="A66176B80D6A87E7EF3A19840ECFE9E1360B440ECBC36D503BED2EDBD3F3701B240EB3D76550580F22BF41F43068DE9E83C4E9399A1E9683E6E832C81A3EA3CB6137889E879741E23028ED06C1D16F77191446B7C36734681E5EA3E965103C2C9F83D6E53CA89D9EA3CB20F21B440F83E6EDB90BA408EAD3FA701B344497E96F791A840C3AAB".
+from_7bit(Bin,0) when is_binary(Bin)->
+  from_7bit(Bin);
+from_7bit(Bin,Padding) when is_binary(Bin),is_integer(Padding), Padding >= 0 , Padding < 8
+  ->
+  NotPadded = 8-Padding,
+  <<Chars:NotPadded, Next:Padding,RemainIn/binary>> = Bin,
+  from_7bit(RemainIn,<<Next>>,<<Chars>>,1).
