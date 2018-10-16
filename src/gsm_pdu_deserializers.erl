@@ -20,7 +20,7 @@ first_octet(<<FirstByte, Remain/binary>>) ->
   case MTI of
     0 ->
       %% SMS-DELIVER PACKET
-      <<_:2, SRI:1, UDHI:1, RP:1, MMS:1, MTI:2>> = <<FirstByte>>,
+      << SRI:1, UDHI:1,RP:1,_:2 , MMS:1, MTI:2>> = <<FirstByte>>,
       {#first_octet_deliver{
         tp_mti = MTI,
         tp_mms = bit_to_boolean(MMS),
