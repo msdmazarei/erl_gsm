@@ -15,7 +15,7 @@
 -include_lib("gsm_pdu.hrl").
 -include_lib("logger.hrl").
 %% API
--export([start_link/3]).
+-export([start_link/3,start_link/2]).
 -export([read_from_modem_device/3]).
 
 %% gen_statem callbacks
@@ -74,6 +74,10 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
+start_link(GsmModemConnectorModuleName,GsmModemConnectorIdentifier) ->
+  {ok,PID} = gen_statem:start_link(?MODULE, [GsmModemConnectorModuleName,GsmModemConnectorIdentifier], []),
+  {ok,_} = timer:apply_interval(100,?MODULE,read_from_modem_device,[PID,GsmModemConnectorModuleName,GsmModemConnectorIdentifier]),
+  {ok,PID}.
 start_link(Name,GsmModemConnectorModuleName,GsmModemConnectorIdentifier) ->
   R = gen_statem:start_link({local, Name}, ?MODULE, [GsmModemConnectorModuleName,GsmModemConnectorIdentifier], []),
   {ok,_} = timer:apply_interval(100,?MODULE,read_from_modem_device,[Name,GsmModemConnectorModuleName,GsmModemConnectorIdentifier]),
