@@ -139,9 +139,6 @@ tp_scts(<<Y, M, D, H, Minu, S, T, Remain/binary>>) ->
     }, Remain}.
 
 -spec udh(binary()) -> {udh(), binary()}.
-udh(<<I, L, D/binary>>) ->
-  io:fwrite("I:~p L:~p D:~p~n", [I, L, D]),
-  #udh{};
 udh(<<I, L, D:L/binary, Remain/binary>>) ->
   {#udh{
     identifier = I,
@@ -149,22 +146,17 @@ udh(<<I, L, D:L/binary, Remain/binary>>) ->
     data = D
   }, Remain}.
 
--spec dh_helper(integer(), binary(), list()) -> {list(), binary()}.
-dh_helper(0, R, Headers) ->
-  {Headers, R};
-dh_helper(Count, HeadersInBinary, Headers) ->
-  {H, Remain} = udh(HeadersInBinary),
-  dh_helper(Count - 1, Remain, [H | Headers]).
-
+dh(<<>>,H) when is_list(H) ->
+  H;
+dh(Bin,Headers) when is_binary(Bin),is_list(Headers)->
+  {UDH,Rest} = udh(Bin),
+  dh(Rest,[UDH|Headers]).
 
 -spec dh(binary()) -> {dh(), binary()}.
-dh(<<L, Headers/binary>>)
-  ->
-  {Hs, R} = dh_helper(L, Headers, []),
-  {#dh{
-    length_of_user_data_header = L,
-    headers = Hs
-  }, R}.
+dh(Bin) when is_binary(Bin)->
+  dh(Bin,[]).
+
+
 
 tpdu(FirstOctet,B) when is_record(FirstOctet,first_octet_deliver)->
   {OA,R1} = address_field(B),
@@ -172,8 +164,17 @@ tpdu(FirstOctet,B) when is_record(FirstOctet,first_octet_deliver)->
   {DCS,R3} = tp_dcs(R2),
   {SCTS,R4}=tp_scts(R3),
   <<UDL,R5/binary>> =R4,
-  UDL1=UDL-1,
-  <<D:UDL1/binary,_/binary>>=R5,
+  {HEADERS,D,BITPadding}  = case FirstOctet of
+         #first_octet_deliver { tp_udhi = true} ->
+           <<HL , HEADERBIN:HL/binary ,DATA/binary>> = R5,
+           H = dh(HEADERBIN),
+           UDHBitLen = (HL+1)*8,
+           Padding =  7*ceil(UDHBitLen/7) - UDHBitLen ,
+           {H,DATA,Padding};
+           _-> {#dh{length_of_user_data_header = 0,headers = []},R5,0}
+       end,
+%%  UDL1=UDL,
+%%  D=R5,
   #tpdu_deliver{
     first_octet = FirstOctet,
     tp_oa = OA,
@@ -182,9 +183,13 @@ tpdu(FirstOctet,B) when is_record(FirstOctet,first_octet_deliver)->
     tp_scts = SCTS,
     tp_udl = UDL,
     tp_ud = case DCS of
-              #tp_dcs{ alphabet_indication = 0 } -> sms_7bit_encoding:from_7bit(D);
+
+              #tp_dcs{ alphabet_indication = 0 } ->
+
+                sms_7bit_encoding:from_7bit(D,BITPadding);
               _-> D
-            end
+            end,
+    dh = HEADERS
   };
 tpdu(FirstOctet,B) when is_record(FirstOctet,first_octet)->
   <<MR, R2/binary>> = B,
@@ -198,6 +203,7 @@ tpdu(FirstOctet,B) when is_record(FirstOctet,first_octet)->
                 3 -> tp_scts(R5)
               end,
   <<UDL, R7/binary>> = R6,
+
   <<Headers, R8>> = dh(R7),
   #tpdu{
     first_octet = FirstOctet,
