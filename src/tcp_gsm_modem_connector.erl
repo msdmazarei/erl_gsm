@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 -behaviour(gsm_modem_connector).
 %% API
--export([start_link/3]).
+-export([start_link/3,start_link/2]).
 
 %%gsm_modem_connector callbacks
 -export([send_to_modem/2,receive_from_modem/1]).
@@ -54,6 +54,9 @@ receive_from_modem(Pid)->
 %%--------------------------------------------------------------------
 -spec(start_link(string(),number(),atom()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
+start_link(ServerIp,ServerPort) ->
+  gen_server:start_link(?MODULE, [ServerIp,ServerPort,"",""], []).
+
 start_link(ServerIp,ServerPort,CellNo) ->
   gen_server:start_link({local, CellNo}, ?MODULE, [ServerIp,ServerPort,CellNo,CellNo], []).
 
