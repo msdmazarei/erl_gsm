@@ -147,7 +147,7 @@ udh(<<I, L, D:L/binary, Remain/binary>>) ->
   }, Remain}.
 
 dh(<<>>,H) when is_list(H) ->
-  H;
+  #dh{length_of_user_data_header = length(H),headers = H};
 dh(Bin,Headers) when is_binary(Bin),is_list(Headers)->
   {UDH,Rest} = udh(Bin),
   dh(Rest,[UDH|Headers]).
