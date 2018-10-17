@@ -47,7 +47,8 @@
   low_level_inbox :: [{number(), pdu()}],
   inbox :: [normal_message()],
   time_ref_newsms :: term(),
-  time_ref_process_llinbox :: term()
+  time_ref_process_llinbox :: term(),
+  sms_handlers_pid :: [pid()]
 }).
 
 %%%===================================================================
@@ -89,11 +90,13 @@ start_link(IPAdderess, Port) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
 init([GSMStateMachine, ModemPID, IPAdderess, Port]) ->
-  {ok, TRef} = timer:apply_interval(30000, ?MODULE, send_at_command, GSMStateMachine),
+  {ok, TRef} = timer:apply_interval(30000, ?MODULE, send_at_command, [GSMStateMachine]),
   {ok, TRef_NEWSMS} = timer:apply_interval(1000, gen_server, call, [self(), check_for_new_sms]),
   {ok, TREF_PROCESS_LLINBOX} = timer:apply_interval(2000, gen_server, call, [self(), process_low_level_inbox]),
 
   {ok, _} = gen_statem:call(GSMStateMachine, {send, 'CMGF', 0}, ?MODEM_COMMAND_TIMEOUT),
+  %%READ OLD INBOX
+  {ok, LLM} = gen_statem:call(GSMStateMachine, {send, 'CMGL', 4}, 20000),
   R = {ok, #state{
     modem_connector_pid = ModemPID,
     modem_ip_address = IPAdderess,
@@ -103,7 +106,7 @@ init([GSMStateMachine, ModemPID, IPAdderess, Port]) ->
     pdu_mode = false,
     time_ref_newsms = TRef_NEWSMS,
     inbox = [],
-    low_level_inbox = [],
+    low_level_inbox = LLM,
     time_ref_process_llinbox = TREF_PROCESS_LLINBOX
   }},
 
@@ -127,7 +130,7 @@ stick_parts([IDENTIFER | IDENTIFER_LIST], ECHList, COMPLETED_MESSAGES) ->
   MSG_PARTS = lists:map(
     fun(Y) ->
       Z = lists:filter(fun(W) -> case W of
-                                   {_, _, _, #udh{data= <<_, _, Y>>}, _} -> true;
+                                   {_, _, _, #udh{data = <<_, _, Y>>}, _} -> true;
                                    _ -> false
                                  end
                        end, ECL),
@@ -191,6 +194,22 @@ process_multipart_messages(State = #state{low_level_inbox = LLInbox, inbox = Inb
   },
   NewState.
 
+inform_handlers(State = #state{inbox = Inbox, sms_handlers_pid = PIDS, gsm_state_machine_pid = GSMModem}) ->
+  lists:foreach(
+    fun(X) ->
+      lists:foreach(
+        fun(Y) ->
+          Y ! X,
+          #normal_message{modem_message_index = I} = X,
+          lists:foreach(
+            fun(Z) ->
+              gen_statem:call(GSMModem, {send, 'CMGD', Z}, ?MODEM_COMMAND_TIMEOUT)
+            end, I)
+        end,
+        PIDS)
+    end, Inbox),
+  State#state{inbox = []}.
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -235,8 +254,9 @@ handle_call(process_low_level_inbox, _, State = #state{low_level_inbox = LLInbox
     low_level_inbox = New_LLInbox
   },
   NNewState = process_multipart_messages(NewState),
+  NNNewState = inform_handlers(NNewState),
 
-  {reply, ok, NNewState};
+  {reply, ok, NNNewState};
 
 handle_call(check_for_new_sms, _, State = #state{gsm_state_machine_pid = GSMModem, low_level_inbox = LLInbox}) ->
   case gen_statem:call(GSMModem, cmti_events) of
@@ -282,6 +302,43 @@ handle_call(get_antenna_status, _, State = #state{gsm_state_machine_pid = S}) ->
     last_send_data_epoch = get_timestamp()
   },
   {reply, R, NewState};
+handle_call({remove_handler, PID}, _, State = #state{sms_handlers_pid = PIDS}) ->
+  NewState = State#state{
+    sms_handlers_pid = lists:filter(
+      fun
+        (X) when X=:=PID -> false;
+        (_) -> true
+      end, PIDS)
+
+  },
+  {reply, ok, NewState};
+handle_call({add_handler, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT}, _, State = #state{sms_handlers_pid = PIDS}) ->
+  GENSERVERPID = self(),
+  PID = spawn(
+    fun() ->
+      receive
+        MSG = #normal_message{sender = SENDER, message_utf_16 = MSG} ->
+          ?MLOG(?LOG_LEVEL_DEBUG, "HANDLERCALLED WITH MSG:~p~n", [MSG]),
+          case re:run(SENDER, SENDER_Regex) of
+            nomatch -> ok;
+            _ -> case re:run(MSG, TXTRegex) of
+                   nomatch -> ok;
+                   _ ->
+                     apply(SUCCESSMODULE, SUCCESSFUNC, lists:append(SUCCESSARGS, [MSG]))
+                 end
+          end
+
+      after
+        TIMEOUT ->
+          ?MLOG(?LOG_LEVEL_DEBUG, "HANDLERCALLED TIMEOUTED ~n", []),
+          gen_server:call(GENSERVERPID, {remove_handler, GENSERVERPID}, 1000),
+          apply(FAILMODULE, FAILFUNC, FAILARGS)
+      end
+
+    end),
+  NewPIDS = [PID | PIDS],
+  NewState = State#state{sms_handlers_pid = NewPIDS},
+  {reply, ok, NewState};
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
 
