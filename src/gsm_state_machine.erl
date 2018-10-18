@@ -15,7 +15,7 @@
 -include_lib("gsm_pdu.hrl").
 -include_lib("logger.hrl").
 %% API
--export([start_link/3,start_link/2]).
+-export([start_link/3, start_link/2]).
 -export([read_from_modem_device/3]).
 
 %% gen_statem callbacks
@@ -33,14 +33,14 @@
 -type send_status() :: sending | wait_to_modem_response | ready.
 -type receive_status() :: receiving | wait_to_modem | ready.
 
--define(SEND_STATUS_SENDING,sending).
--define(SEND_STATUS_WAIT,wait_to_modem_response).
--define(SEND_STATUS_READY,ready).
+-define(SEND_STATUS_SENDING, sending).
+-define(SEND_STATUS_WAIT, wait_to_modem_response).
+-define(SEND_STATUS_READY, ready).
 
 
--record(cmti_event,{
-  storage::list(),
-  index::integer()
+-record(cmti_event, {
+  storage :: list(),
+  index :: integer()
 }).
 -type cmti_event() :: #cmti_event{}.
 
@@ -198,8 +198,50 @@ append_to_inbox_message(MsgIndex, Message, Inbox) ->
   end.
 
 
-process_parts(<<>>, State) -> {State, []};
+process_parts(<<>>, State) ->
+  {State, []};
 process_parts(<<"\r\n> \r\nERROR\r\n">>, State) -> {State, []};
+
+process_parts(<<"\r\n+CUSD: ", Remain/binary>>, State = #state{last_sent_command = 'CUSD', respond_back_to = RES_BACK}) ->
+  ?MLOG(?LOG_LEVEL_DEBUG, "CUSD: Processing called.", []),
+  {CODE, R1} = string:to_integer(Remain),
+  {C,S,D,NS,A} =
+    case R1 of
+    <<",", R2/binary>> ->
+      [STR, R3] = string:split(R2, <<",">>),
+      {DCSN, <<"\r\n", R4/binary>>} = string:to_integer(R3),
+      RESULT =
+        case STR of
+          <<"\"", PSTR/binary>> ->
+            [PPSTR,_]= string:split(PSTR, <<"\"">>),
+            {NState, Acts} = process_parts(R4, State),
+            ?MLOG(?LOG_LEVEL_DEBUG,"PPSTR:~p~n",[PPSTR]),
+            {CODE, hex:hexstr_to_bin(binary_to_list( PPSTR)), DCSN, NState, Acts};
+          _ ->
+            {NState, Acts} = process_parts(R4, State),
+            {CODE, STR, DCSN, NState, Acts}
+        end,
+      RESULT;
+    <<"\r\n",R2/binary>>->
+      {NState, Acts} = process_parts(R2, State),
+      {CODE, "", -1, NState, Acts}
+  end,
+  NNS = NS # state {
+    send_status = ?SEND_STATUS_READY
+  },
+  case RES_BACK of
+    undefined ->
+      {NNS , A};
+    {P, _} when is_pid(P) ->
+      {NNS , [{reply, RES_BACK, {ok,{C,S,D}}} | A]};
+    {P, _} when is_atom(P) ->
+      {NNS , [{reply, RES_BACK, {ok,{C,S,D}}} | A]}
+  end;
+%%when CUSD TIMOUT or other notification arrived that we are not waiting for.
+process_parts(<<"\r\n+CUSD: ", Remain/binary>>, State ) ->
+  [_,R1]=string:split(Remain,<<"\r\n">>),
+  process_parts(R1,State);
+
 process_parts(<<"\r\n+CMGL: ", Remain/binary>>, State = #state{last_sent_command = 'CMGL', inbox_messages = Inbox}) ->
   ?MLOG(?LOG_LEVEL_DEBUG, "CMGL: process CALLED WITH REMAIN: ~p~n", [Remain]),
   {MSGINDEX, R1} = string:to_integer(Remain),
@@ -291,7 +333,8 @@ process_parts(<<"\r\nERROR\r\n", Remain/binary>>, State = #state{respond_back_to
 %%  NewState = State#state{send_status = ready,received_chars = Remain},
 %%  {NState,Acts} = process_parts(Remain,NewState),
 %%  {NState,[{reply,RES_BACK,{ok,CSQCME}}|Acts]};
-
+process_parts(<<"\r\nOK\r\n", Remain/binary>>, State = #state{last_sent_command = 'CUSD',command_result = undefined}) ->
+  process_parts(Remain, State);
 process_parts(<<"\r\nOK\r\n", Remain/binary>>, State = #state{respond_back_to = RES_BACK, last_sent_command = LAST_COMMAND, command_result = CMD_RESULT}) ->
   ?MLOG(?LOG_LEVEL_DEBUG, "OK PART CALLED FOR ~p COMMAND. RESPOND BACK TO ~p ~n", [LAST_COMMAND, RES_BACK]),
   NewState = State#state{send_status = ready, received_chars = Remain},
@@ -395,6 +438,15 @@ handle_event({call, From}, {send, 'CSCS', CHARSET}, StateName, State = #state{se
   ok = apply(M, send_to_modem, [I, <<(list_to_binary(COMMAND))/binary>>]),
   ?MLOG(?LOG_LEVEL_DEBUG, "SENT CMD:~p~n", [COMMAND]),
   NewState = State#state{send_status = ?SEND_STATUS_WAIT, last_sent_command = 'CSCS', respond_back_to = From, command_result = undefined},
+  {next_state, StateName, NewState};
+
+handle_event({call, From}, {send, 'CUSD', N, STR, DCS}, StateName, State = #state{send_status = ?SEND_STATUS_READY, gsm_modem_connector_module_name = M, gsm_modem_connector_identifier = I}) ->
+  ?MLOG(?LOG_LEVEL_DEBUG, "CUSD: CALLED FROM ~p~n", [From]),
+  COMMAND = io_lib:format("AT+CUSD=~p,~s,~p\r", [N, STR, DCS]),
+  ?MLOG(?LOG_LEVEL_DEBUG, "SENDING CMD:~p~n", [COMMAND]),
+  ok = apply(M, send_to_modem, [I, <<(list_to_binary(COMMAND))/binary>>]),
+  ?MLOG(?LOG_LEVEL_DEBUG, "SENT CMD:~p~n", [COMMAND]),
+  NewState = State#state{send_status = ?SEND_STATUS_WAIT, last_sent_command = 'CUSD', respond_back_to = From, command_result = undefined},
   {next_state, StateName, NewState};
 
 handle_event(
