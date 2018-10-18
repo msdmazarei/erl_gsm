@@ -241,7 +241,7 @@ process_parts(<<"\r\n+CUSD: ", Remain/binary>>, State = #state{last_sent_command
 %%when CUSD TIMOUT or other notification arrived that we are not waiting for.
 process_parts(<<"\r\n+CUSD: ", Remain/binary>>, State ) ->
   [_,R1]=string:split(Remain,<<"\r\n">>),
-  process_parts(R1,State#state{received_chars = Remain});
+  process_parts(R1,State#state{received_chars = R1});
 
 process_parts(<<"\r\n+CMGL: ", Remain/binary>>, State = #state{last_sent_command = 'CMGL', inbox_messages = Inbox}) ->
   ?MLOG(?LOG_LEVEL_DEBUG, "CMGL: process CALLED WITH REMAIN: ~p~n", [Remain]),
