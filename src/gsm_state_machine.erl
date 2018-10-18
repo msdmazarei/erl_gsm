@@ -203,7 +203,7 @@ process_parts(<<>>, State) ->
 process_parts(<<"\r\n> \r\nERROR\r\n">>, State) -> {State, []};
 
 process_parts(<<"\r\n+CUSD: ", Remain/binary>>, State = #state{last_sent_command = 'CUSD', respond_back_to = RES_BACK}) ->
-  ?MLOG(?LOG_LEVEL_DEBUG, "CUSD: Processing called.", []),
+  ?MLOG(?LOG_LEVEL_DEBUG, "CUSD: Processing called. REAMIN:~p~n", [Remain]),
   {CODE, R1} = string:to_integer(Remain),
   {C,S,D,NS,A} =
     case R1 of
@@ -214,16 +214,17 @@ process_parts(<<"\r\n+CUSD: ", Remain/binary>>, State = #state{last_sent_command
         case STR of
           <<"\"", PSTR/binary>> ->
             [PPSTR,_]= string:split(PSTR, <<"\"">>),
-            {NState, Acts} = process_parts(R4, State),
+            NState_ = State#state{received_chars = R4},
+            {NState, Acts} = process_parts(R4, NState_),
             ?MLOG(?LOG_LEVEL_DEBUG,"PPSTR:~p~n",[PPSTR]),
             {CODE, hex:hexstr_to_bin(binary_to_list( PPSTR)), DCSN, NState, Acts};
           _ ->
-            {NState, Acts} = process_parts(R4, State),
+            {NState, Acts} = process_parts(R4, State#state{received_chars = R4}),
             {CODE, STR, DCSN, NState, Acts}
         end,
       RESULT;
     <<"\r\n",R2/binary>>->
-      {NState, Acts} = process_parts(R2, State),
+      {NState, Acts} = process_parts(R2, State#state{received_chars = R2}),
       {CODE, "", -1, NState, Acts}
   end,
   NNS = NS # state {
@@ -240,7 +241,7 @@ process_parts(<<"\r\n+CUSD: ", Remain/binary>>, State = #state{last_sent_command
 %%when CUSD TIMOUT or other notification arrived that we are not waiting for.
 process_parts(<<"\r\n+CUSD: ", Remain/binary>>, State ) ->
   [_,R1]=string:split(Remain,<<"\r\n">>),
-  process_parts(R1,State);
+  process_parts(R1,State#state{received_chars = Remain});
 
 process_parts(<<"\r\n+CMGL: ", Remain/binary>>, State = #state{last_sent_command = 'CMGL', inbox_messages = Inbox}) ->
   ?MLOG(?LOG_LEVEL_DEBUG, "CMGL: process CALLED WITH REMAIN: ~p~n", [Remain]),
