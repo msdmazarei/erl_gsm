@@ -165,7 +165,7 @@ stick_parts([IDENTIFER | IDENTIFER_LIST], ECHList, COMPLETED_MESSAGES) ->
       MSG = #normal_message{
         sender = SENDERNO,
         message_timeepch = TIMEPOCH,
-        message_utf_16 = lists:map(fun({_, _, _, _, #pdu{tpdu = #tpdu_deliver{tp_ud = UD}}}) -> UD end, MSG_PARTS1),
+        message_utf_16 = erlang:iolist_to_binary( lists:map(fun({_, _, _, _, #pdu{tpdu = #tpdu_deliver{tp_ud = UD}}}) -> UD end, MSG_PARTS1)),
         modem_message_index = lists:map(fun({MSGINX, _, _, _, _}) -> MSGINX end, MSG_PARTS1)
       },
       CPMSG = lists:append(COMPLETED_MESSAGES, [MSG]),
