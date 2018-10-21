@@ -13,7 +13,7 @@
 -export([get_antenna_status/1]).
 
 %% API
--export([start_link/2, send_at_command/1, send_sms/3, send_ussd/2,register_handler/10]).
+-export([start_link/2, send_at_command/1, send_sms/3, send_ussd/2, register_handler/10, success_message/1,read_inbox_sms/1]).
 -define(MODEM_COMMAND_TIMEOUT, 5000).
 %% gen_server callbacks
 -export([init/1,
@@ -55,18 +55,23 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+success_message(MSG) ->
+  ?MLOG(?LOG_LEVEL_DEBUG, "-----------------~n~npid:~p~nSUCCESSFULLY MEESAGE ARIVED:~p~n ---------------- ~n~n~n", [self(), MSG]).
+
 get_antenna_status(Pid) ->
   gen_server:call(Pid, get_antenna_status, ?MODEM_COMMAND_TIMEOUT).
 send_sms(Pid, TargetNo, UTF16Bin) ->
   gen_server:call(Pid, {send_sms, TargetNo, UTF16Bin}, 20000).
+read_inbox_sms(Pid)->
+  gen_server:call(Pid,read_inbox_sms,20000).
 send_ussd(Pid, StrToSend) ->
   case gen_server:call(Pid, {send_ussd, StrToSend}, 20000) of
     {ok, {_USSDSTATUS, TXT, _ENCODING}} ->
       TXT;
     _ -> error
   end.
-register_handler(Pid,SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT)->
-  gen_server:call(Pid,{add_handler,SENDER_Regex,TXTRegex,SUCCESSMODULE,SUCCESSFUNC,SUCCESSARGS,FAILMODULE,FAILFUNC,FAILARGS,TIMEOUT}).
+register_handler(Pid, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT) ->
+  gen_server:call(Pid, {add_handler, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -106,7 +111,7 @@ init([GSMStateMachine, ModemPID, IPAdderess, Port]) ->
 
   {ok, _} = gen_statem:call(GSMStateMachine, {send, 'CMGF', 0}, ?MODEM_COMMAND_TIMEOUT),
   %%READ OLD INBOX
-  {ok, LLM} = gen_statem:call(GSMStateMachine, {send, 'CMGL', 4}, 20000),
+
   R = {ok, #state{
     modem_connector_pid = ModemPID,
     modem_ip_address = IPAdderess,
@@ -116,7 +121,7 @@ init([GSMStateMachine, ModemPID, IPAdderess, Port]) ->
     pdu_mode = false,
     time_ref_newsms = TRef_NEWSMS,
     inbox = [],
-    low_level_inbox = LLM,
+    low_level_inbox = [],
     time_ref_process_llinbox = TREF_PROCESS_LLINBOX,
     sms_handlers_pid = []
   }},
@@ -210,15 +215,17 @@ inform_handlers(State = #state{inbox = Inbox, sms_handlers_pid = PIDS, gsm_state
     fun(X) ->
       lists:foreach(
         fun(Y) ->
-          ?MLOG(?LOG_LEVEL_DEBUG,"inform_handlers: sending To PID:~p MSG:~p~n",[Y,X]),
-          Y ! X,
-          #normal_message{modem_message_index = I} = X,
-          lists:foreach(
-            fun(Z) ->
-              gen_statem:call(GSMModem, {send, 'CMGD', Z}, ?MODEM_COMMAND_TIMEOUT)
-            end, I)
+          ?MLOG(?LOG_LEVEL_DEBUG, "inform_handlers: sending To PID:~p MSG:~p~n", [Y, X]),
+          Y ! X
         end,
-        PIDS)
+        PIDS),
+
+      #normal_message{modem_message_index = I} = X,
+      lists:foreach(
+        fun(Z) ->
+          gen_statem:call(GSMModem, {send, 'CMGD', Z}, ?MODEM_COMMAND_TIMEOUT)
+        end, I)
+
     end, Inbox),
   State#state{inbox = []}.
 
@@ -329,8 +336,19 @@ handle_call(get_antenna_status, _, State = #state{gsm_state_machine_pid = S}) ->
     last_send_data_epoch = utils:get_timestamp()
   },
   {reply, R, NewState};
+handle_call(read_inbox_sms,_,State =#state{low_level_inbox = LLI,gsm_state_machine_pid =  GSMStateMachine}) ->
+  LLM= case gen_statem:call(GSMStateMachine, {send, 'CMGL', 4}, 20000) of
+                {ok,ok}->[];
+                {ok,L} when is_list(L)->L
+              end,
+  ?MLOG(?LOG_LEVEL_DEBUG,"INBOX MESSAGES ARE:~p~n",[LLM]),
+  NewState = State#state{
+    low_level_inbox = LLI ++ LLM
+  },
+  {reply,ok,NewState};
+
 handle_call({remove_handler, PID}, _, State = #state{sms_handlers_pid = PIDS}) ->
-  ?MLOG(?LOG_LEVEL_DEBUG,"RENIVE HANDLER CAKKED FOR PID:~p~n",[PID]),
+  ?MLOG(?LOG_LEVEL_DEBUG, "REMOVE HANDLER FOR PID:~p~n", [PID]),
   NewState = State#state{
     sms_handlers_pid = lists:filter(
       fun
@@ -339,16 +357,17 @@ handle_call({remove_handler, PID}, _, State = #state{sms_handlers_pid = PIDS}) -
       end, PIDS)
 
   },
-  ?MLOG(?LOG_LEVEL_DEBUG,"NEW PIDS:~p~n",[NewState#state.sms_handlers_pid]),
+  ?MLOG(?LOG_LEVEL_DEBUG, "REMOVE HANDLER - NEW PIDS:~p~n", [NewState#state.sms_handlers_pid]),
   {reply, ok, NewState};
 handle_call({add_handler, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT}, _, State = #state{sms_handlers_pid = PIDS}) ->
+  GENS = self(),
   PID = spawn(
     fun() ->
-      wait_to_incoming_sms(self(),SENDER_Regex,TXTRegex,SUCCESSMODULE,SUCCESSFUNC,SUCCESSARGS,FAILMODULE,FAILFUNC,FAILARGS,TIMEOUT)
+      wait_to_incoming_sms(GENS, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT)
     end),
   NewPIDS = [PID | PIDS],
   NewState = State#state{sms_handlers_pid = NewPIDS},
-  ?MLOG(?LOG_LEVEL_DEBUG,"NEW PIDS:~p",[NewState#state.sms_handlers_pid]),
+  ?MLOG(?LOG_LEVEL_DEBUG, "NEW PIDS:~p", [NewState#state.sms_handlers_pid]),
   {reply, ok, NewState};
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
@@ -421,43 +440,55 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-wait_to_incoming_sms(GENSERVERPID ,SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT)->
+wait_to_incoming_sms(GENSERVERPID, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT) ->
   START = utils:get_timestamp(),
   B = fun() ->
+
     ELASPSED =
       START - utils:get_timestamp() + TIMEOUT,
+    ?MLOG(?LOG_LEVEL_DEBUG, "NOT MATCHED, B TIMEOUT:~p~n", [ELASPSED]),
     case ELASPSED of
       I when I < 0 ->
-        wait_to_incoming_sms(GENSERVERPID, SENDER_Regex,TXTRegex,SUCCESSMODULE,SUCCESSFUNC,SUCCESSARGS,FAILMODULE,FAILFUNC,FAILARGS,0);
+        wait_to_incoming_sms(GENSERVERPID, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, 0);
       _ ->
-        wait_to_incoming_sms(GENSERVERPID,SENDER_Regex,TXTRegex,SUCCESSMODULE,SUCCESSFUNC,SUCCESSARGS,FAILMODULE,FAILFUNC,FAILARGS,ELASPSED)
+        wait_to_incoming_sms(GENSERVERPID, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, ELASPSED)
 
     end
       end,
 
   receive
-    MSG = #normal_message{sender = SENDER, message_utf_16 = MSG} ->
-      ?MLOG(?LOG_LEVEL_DEBUG, "HANDLERCALLED WITH MSG:~p~n", [MSG]),
-      case re:run(SENDER, SENDER_Regex) of
+    MSGORIG = #normal_message{sender = SENDER, message_utf_16 = MSG} ->
+      ?MLOG(?LOG_LEVEL_DEBUG, "HANDLER  CALLED WITH MSG:~p SENDER_REGEX:~p TXTRegex:~p ~n", [MSG, SENDER_Regex, TXTRegex]),
+      case re:run(SENDER_Regex, SENDER) of
         nomatch ->
+          ?MLOG(?LOG_LEVEL_DEBUG, "SENDER NOT MATCHED ~n", []),
+
           B();
-        _ -> case re:run(MSG, TXTRegex) of
+        _ -> case re:run(TXTRegex, MSG) of
                nomatch ->
+                 ?MLOG(?LOG_LEVEL_DEBUG, "TEXT NOT MATCHED~n", []),
                  B();
                _ ->
                  ?MLOG(?LOG_LEVEL_DEBUG, "MESSAGE MATCHED:~p~n", [MSG]),
-                 gen_server:call(GENSERVERPID, {remove_handler, GENSERVERPID}, 1000),
-                 apply(SUCCESSMODULE, SUCCESSFUNC, lists:append(SUCCESSARGS, [MSG]))
+                 ?MLOG(?LOG_LEVEL_DEBUG, "MESSAGE MATCHED REMOVING HANDLER", []),
+                 gen_server:call(GENSERVERPID, {remove_handler, self()}, 1000),
+                 ?MLOG(?LOG_LEVEL_DEBUG, "MESSAGE MATCHED  HANDLER REMOVED ~p from ~p~n", [self(), GENSERVERPID]),
+                 NEWARGS = lists:append(SUCCESSARGS, [MSGORIG]),
+                 ?MLOG(?LOG_LEVEL_DEBUG, "MESSAGE MATCHED CALL SUCC MODULE WITH ARG:~p~n", [NEWARGS]),
+                 apply(SUCCESSMODULE, SUCCESSFUNC, NEWARGS)
              end
       end;
 
-    _ ->
+    MSG ->
+      ?MLOG(?LOG_LEVEL_DEBUG, "MESSAGE RECEIVED TO EVALUATOR:~p~n", [MSG]),
       B()
   after
     TIMEOUT ->
       ?MLOG(?LOG_LEVEL_DEBUG, "HANDLERCALLED TIMEOUTED ~n", []),
       apply(FAILMODULE, FAILFUNC, FAILARGS),
-      gen_server:call(GENSERVERPID, {remove_handler, GENSERVERPID}, 1000)
+      ?MLOG(?LOG_LEVEL_DEBUG, "MESSAGE MATCHED REMOVING HANDLER ~p from ~p ~n", [self(), GENSERVERPID]),
+      gen_server:call(GENSERVERPID, {remove_handler, self()}, 1000),
+      ?MLOG(?LOG_LEVEL_DEBUG, "MESSAGE MATCHED  HANDLER REMOVED", [])
 
   end.
 
