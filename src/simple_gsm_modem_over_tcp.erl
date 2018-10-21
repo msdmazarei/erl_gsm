@@ -56,11 +56,13 @@
 %%% API
 %%%===================================================================
 success_message(MSG) ->
-  ?MLOG(?LOG_LEVEL_DEBUG, "-----------------~n~npid:~p~nSUCCESSFULLY MEESAGE ARIVED:~p~n ---------------- ~n~n~n", [self(), MSG]).
+  ?MLOG(?LOG_LEVEL_DEBUG, "-----------------~n~npid:~p~nSUCCESSFULLY MEESAGE ARIVED:~p~n ---------------- ~n~n~n", [self(), MSG]),
+  io:fwrite("~ts",[unicode:characters_to_binary(unicode:characters_to_binary(MSG,utf16,utf8))]).
 
 get_antenna_status(Pid) ->
   gen_server:call(Pid, get_antenna_status, ?MODEM_COMMAND_TIMEOUT).
-send_sms(Pid, TargetNo, UTF16Bin) ->
+send_sms(Pid, TargetNo, UTF16Bin)  ->
+  ?MLOG(?LOG_LEVEL_DEBUG,"SEND SMS CALLED BY PID:~p TARGETNO:~p UTFBIN:~p ~n",[Pid,TargetNo,UTF16Bin]),
   gen_server:call(Pid, {send_sms, TargetNo, UTF16Bin}, 20000).
 read_inbox_sms(Pid)->
   gen_server:call(Pid,read_inbox_sms,20000).
@@ -416,7 +418,10 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term()).
-terminate(_Reason, _State = #state{time_ref_interval = TRef, time_ref_newsms = TRefNEWSMS, time_ref_process_llinbox = TREF_LLINBOX}) ->
+terminate(_Reason, _State = #state{time_ref_interval = TRef, time_ref_newsms = TRefNEWSMS, time_ref_process_llinbox = TREF_LLINBOX,gsm_state_machine_pid = GSM, modem_connector_pid = MCPID}) ->
+  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, state:~p~n----------------~n",[_State]),
+  exit(GSM,normal),
+  exit(MCPID,normal),
   timer:cancel(TRef),
   timer:cancel(TRefNEWSMS),
   timer:cancel(TREF_LLINBOX),
