@@ -185,8 +185,10 @@ tpdu(FirstOctet,B) when is_record(FirstOctet,first_octet_deliver)->
     tp_ud = case DCS of
 
               #tp_dcs{ alphabet_indication = 0 } ->
-
-                sms_7bit_encoding:from_7bit(D,BITPadding);
+                unicode:characters_to_binary(
+                  sms_7bit_encoding:from_7bit(D,BITPadding),
+                  unicode,utf16)
+                ;
               _-> D
             end,
     dh = HEADERS
