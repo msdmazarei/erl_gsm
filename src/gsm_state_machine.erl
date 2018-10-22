@@ -57,7 +57,7 @@
   pdu_to_send :: pdu(),
 
   cmti_events :: [cmti_event()],
-
+  read_from_modem_device_tref::any(),
   command_result :: any()
 }).
 
@@ -76,12 +76,12 @@
 %%--------------------------------------------------------------------
 start_link(GsmModemConnectorModuleName, GsmModemConnectorIdentifier) ->
   {ok, PID} = gen_statem:start_link(?MODULE, [GsmModemConnectorModuleName, GsmModemConnectorIdentifier], []),
-  {ok, _} = timer:apply_interval(100, ?MODULE, read_from_modem_device, [PID, GsmModemConnectorModuleName, GsmModemConnectorIdentifier]),
+%%  {ok, _} = timer:apply_interval(100, ?MODULE, read_from_modem_device, [PID, GsmModemConnectorModuleName, GsmModemConnectorIdentifier]),
   {ok, PID}.
 start_link(Name, GsmModemConnectorModuleName, GsmModemConnectorIdentifier) ->
-  R = gen_statem:start_link({local, Name}, ?MODULE, [GsmModemConnectorModuleName, GsmModemConnectorIdentifier], []),
-  {ok, _} = timer:apply_interval(100, ?MODULE, read_from_modem_device, [Name, GsmModemConnectorModuleName, GsmModemConnectorIdentifier]),
-  R.
+  {ok,PID} = gen_statem:start_link({local, Name}, ?MODULE, [GsmModemConnectorModuleName, GsmModemConnectorIdentifier], []),
+%%  {ok, _} = timer:apply_interval(100, ?MODULE, read_from_modem_device, [Name, GsmModemConnectorModuleName, GsmModemConnectorIdentifier]),
+  {ok,PID}.
 
 %%%===================================================================
 %%% gen_statem callbacks
@@ -104,6 +104,7 @@ start_link(Name, GsmModemConnectorModuleName, GsmModemConnectorIdentifier) ->
 
 init([GsmModemConnectorModuleName, GsmModemConnectorIdentifier]) ->
   %%simple interval to read from device
+  {ok,TREF }=timer:send_interval(100,self(),read_from_modem_device),
   {ok, state_name, #state{
     gsm_modem_connector_identifier = GsmModemConnectorIdentifier,
     gsm_modem_connector_module_name = GsmModemConnectorModuleName,
@@ -112,7 +113,8 @@ init([GsmModemConnectorModuleName, GsmModemConnectorIdentifier]) ->
     inbox_messages = [],
     received_chars = <<>>,
     pdu_enable = false,
-    cmti_events = []
+    cmti_events = [],
+    read_from_modem_device_tref = TREF
 
   }}.
 
@@ -541,6 +543,14 @@ handle_event({call, From}, {recieved_from_modem, Data}, StateName, State = #stat
 
 handle_event(E = {call, From}, _, _, S) ->
   {next_state, E, S, [{reply, From, ok}]};
+handle_event(info,read_from_modem_device,StateName,State= #state{gsm_modem_connector_identifier = I,gsm_modem_connector_module_name = M})->
+  Self = self(),
+  spawn(
+    fun()->
+      read_from_modem_device(Self,M,I)
+    end
+  ),
+  {next_state,StateName,State};
 handle_event(_EventType, _EventContent, _StateName, State) ->
   NextStateName = the_next_state_name,
   {next_state, NextStateName, State}.
@@ -556,7 +566,8 @@ handle_event(_EventType, _EventContent, _StateName, State) ->
 %% @spec terminate(Reason, StateName, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _StateName, _State) ->
+terminate(_Reason, _StateName, _State = #state{read_from_modem_device_tref = RTREF}) ->
+  timer:cancel(RTREF),
   ok.
 
 %%--------------------------------------------------------------------
