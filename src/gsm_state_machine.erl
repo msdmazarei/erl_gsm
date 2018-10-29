@@ -105,6 +105,7 @@ start_link(Name, GsmModemConnectorModuleName, GsmModemConnectorIdentifier) ->
 init([GsmModemConnectorModuleName, GsmModemConnectorIdentifier]) ->
   %%simple interval to read from device
   {ok,TREF }=timer:send_interval(100,self(),read_from_modem_device),
+  process_flag(trap_exit, true),
   {ok, state_name, #state{
     gsm_modem_connector_identifier = GsmModemConnectorIdentifier,
     gsm_modem_connector_module_name = GsmModemConnectorModuleName,
@@ -567,6 +568,8 @@ handle_event(_EventType, _EventContent, _StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, _State = #state{read_from_modem_device_tref = RTREF}) ->
+  ?MLOG(?LOG_LEVEL_DEBUG,"GSM_STATE_MACHINE, terminate called process:~p state:~p~n--------------------~n",[self(), _State]),
+  ?MLOG(?LOG_LEVEL_DEBUG,"GSM_STATE_MACHINE: CANCEL TIMER:~p~n-------------~n",[RTREF]),
   timer:cancel(RTREF),
   ok.
 

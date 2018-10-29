@@ -107,12 +107,15 @@ start_link(IPAdderess, Port) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
 init([GSMStateMachine, ModemPID, IPAdderess, Port]) ->
+
   {ok, TRef} = timer:apply_interval(30000, ?MODULE, send_at_command, [GSMStateMachine]),
   {ok, TRef_NEWSMS} = timer:apply_interval(1000, gen_server, call, [self(), check_for_new_sms]),
   {ok, TREF_PROCESS_LLINBOX} = timer:apply_interval(2000, gen_server, call, [self(), process_low_level_inbox]),
 
   {ok, _} = gen_statem:call(GSMStateMachine, {send, 'CMGF', 0}, ?MODEM_COMMAND_TIMEOUT),
+  process_flag(trap_exit, true),
   %%READ OLD INBOX
+
 
   R = {ok, #state{
     modem_connector_pid = ModemPID,
@@ -419,11 +422,17 @@ handle_info(_Info, State) ->
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term()).
 terminate(_Reason, _State = #state{time_ref_interval = TRef, time_ref_newsms = TRefNEWSMS, time_ref_process_llinbox = TREF_LLINBOX,gsm_state_machine_pid = GSM, modem_connector_pid = MCPID}) ->
-  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, state:~p~n----------------~n",[_State]),
-  exit(GSM,normal),
-  exit(MCPID,normal),
+  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called,Reason:~p state:~p~n----------------~n",[_Reason,_State]),
+
+  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, SEND EXIT TO PROCEESS GSM:~p",[GSM]),
+  exit(GSM,_Reason),
+  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, SEND EXIT TO PROCEESS modem_connector_pid:~p",[MCPID]),
+  exit(MCPID,_Reason),
+  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, CANCEL TIMER TRef:~p",[TRef]),
   timer:cancel(TRef),
+  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, CANCEL TIMER NEW SMS:~p",[TRefNEWSMS]),
   timer:cancel(TRefNEWSMS),
+  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, CANCEL TIMER LLINBOX:~p",[TREF_LLINBOX]),
   timer:cancel(TREF_LLINBOX),
   ok.
 

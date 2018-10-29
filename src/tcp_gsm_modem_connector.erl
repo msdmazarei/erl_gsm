@@ -10,7 +10,10 @@
 -author("msd").
 -include_lib("logger.hrl").
 -behaviour(gen_server).
--behaviour(gsm_modem_connector).
+
+-callback send_to_modem(term(),binary())-> ok.
+-callback receive_from_modem(term())-> binary().
+
 %% API
 -export([start_link/3,start_link/2]).
 
@@ -80,7 +83,10 @@ start_link(ServerIp,ServerPort,CellNo) ->
   {stop, Reason :: term()} | ignore).
 init([ServerIp,ServerPort,CellNo,Name]) ->
   case  gen_tcp:connect(ServerIp,ServerPort,[binary,{active, false}]) of
-    {ok,Sock}->{ok, #state{
+    {ok,Sock}->
+      ?MLOG(?LOG_LEVEL_DEBUG,"MODEM CONNECTOR INIT CALLED PID:~p",[self()]),
+      process_flag(trap_exit, true),
+      {ok, #state{
       server_ip = ServerIp,
       server_port = ServerPort,
       cell_no = CellNo,
@@ -142,6 +148,7 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
 handle_info(_Info, State) ->
+  ?MLOG(?LOG_LEVEL_DEBUG,"tcp-gsm-modem-connector - info:~p",[_Info]),
   {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -157,7 +164,9 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term()).
-terminate(_Reason, _State) ->
+terminate(_Reason, _State=#state{ socket = Sock}) ->
+  ?MLOG(?LOG_LEVEL_DEBUG,"tcp-connector terminaate called with State:~p~n",[_State]),
+  gen_tcp:close(Sock),
   ok.
 
 %%--------------------------------------------------------------------
