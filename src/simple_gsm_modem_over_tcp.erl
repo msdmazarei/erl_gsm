@@ -61,12 +61,20 @@ success_message(MSG) ->
 
 get_antenna_status(Pid) ->
   gen_server:call(Pid, get_antenna_status, ?MODEM_COMMAND_TIMEOUT).
-send_sms(Pid, TargetNo, UTF16Bin)  ->
+
+send_sms(Pid, TargetNo, UTF16Bin)  when is_pid(Pid), erlang:is_binary(TargetNo), erlang:is_binary(UTF16Bin) ->
+  send_sms(Pid,binary_to_list(TargetNo),UTF16Bin);
+
+send_sms(Pid, TargetNo, UTF16Bin)  when is_pid(Pid), is_list(TargetNo), erlang:is_binary(UTF16Bin) ->
   ?MLOG(?LOG_LEVEL_DEBUG,"SEND SMS CALLED BY PID:~p TARGETNO:~p UTFBIN:~p ~n",[Pid,TargetNo,UTF16Bin]),
   gen_server:call(Pid, {send_sms, TargetNo, UTF16Bin}, 20000).
+
 read_inbox_sms(Pid)->
   gen_server:call(Pid,read_inbox_sms,20000).
-send_ussd(Pid, StrToSend) ->
+
+send_ussd(Pid, StrToSend) when is_pid(Pid),is_list(StrToSend) ,erlang: is_binary(StrToSend)->
+  send_ussd(Pid,binary_to_list(StrToSend));
+send_ussd(Pid, StrToSend) when is_pid(Pid),is_list(StrToSend) ->
   case gen_server:call(Pid, {send_ussd, StrToSend}, 20000) of
     {ok, {_USSDSTATUS, TXT, _ENCODING}} ->
       TXT;
