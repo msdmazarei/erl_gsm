@@ -481,12 +481,12 @@ wait_to_incoming_sms(GENSERVERPID, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCES
   receive
     MSGORIG = #normal_message{sender = SENDER, message_utf_16 = MSG} ->
       ?MLOG(?LOG_LEVEL_DEBUG, "HANDLER  CALLED WITH MSG:~p SENDER_REGEX:~p TXTRegex:~p ~n", [MSG, SENDER_Regex, TXTRegex]),
-      case re:run(SENDER_Regex, SENDER) of
+      case re:run(SENDER,SENDER_Regex) of
         nomatch ->
           ?MLOG(?LOG_LEVEL_DEBUG, "SENDER NOT MATCHED ~n", []),
 
           B();
-        _ -> case re:run(TXTRegex, MSG) of
+        _ -> case re:run( MSG,TXTRegex) of
                nomatch ->
                  ?MLOG(?LOG_LEVEL_DEBUG, "TEXT NOT MATCHED~n", []),
                  B();
