@@ -13,7 +13,8 @@
 -export([get_antenna_status/1]).
 
 %% API
--export([start_link/2, send_at_command/1, send_sms/3, send_ussd/2, register_handler/10, success_message/1,read_inbox_sms/1]).
+-export([start_link/2, send_at_command/1, send_sms/3, send_ussd/2, register_handler/10, success_message/1, read_inbox_sms/1]).
+-export([register_to_inform_every_message/4]).
 -define(MODEM_COMMAND_TIMEOUT, 5000).
 %% gen_server callbacks
 -export([init/1,
@@ -56,25 +57,24 @@
 %%% API
 %%%===================================================================
 success_message(MSG) ->
-  ?MLOG(?LOG_LEVEL_DEBUG, "-----------------~n~npid:~p~nSUCCESSFULLY MEESAGE ARIVED:~p~n ---------------- ~n~n~n", [self(), MSG]),
-  io:fwrite("~ts",[unicode:characters_to_binary(unicode:characters_to_binary(MSG,utf16,utf8))]).
+  ?MLOG(?LOG_LEVEL_DEBUG, "-----------------~n~npid:~p~nSUCCESSFULLY MEESAGE ARIVED:~p~n ---------------- ~n~n~n", [self(), MSG]).
 
 get_antenna_status(Pid) ->
   gen_server:call(Pid, get_antenna_status, ?MODEM_COMMAND_TIMEOUT).
 
-send_sms(Pid, TargetNo, UTF16Bin)  when is_pid(Pid), erlang:is_binary(TargetNo), erlang:is_binary(UTF16Bin) ->
-  send_sms(Pid,binary_to_list(TargetNo),UTF16Bin);
+send_sms(Pid, TargetNo, UTF16Bin) when is_pid(Pid), erlang:is_binary(TargetNo), erlang:is_binary(UTF16Bin) ->
+  send_sms(Pid, binary_to_list(TargetNo), UTF16Bin);
 
-send_sms(Pid, TargetNo, UTF16Bin)  when is_pid(Pid), is_list(TargetNo), erlang:is_binary(UTF16Bin) ->
-  ?MLOG(?LOG_LEVEL_DEBUG,"SEND SMS CALLED BY PID:~p TARGETNO:~p UTFBIN:~p ~n",[Pid,TargetNo,UTF16Bin]),
+send_sms(Pid, TargetNo, UTF16Bin) when is_pid(Pid), is_list(TargetNo), erlang:is_binary(UTF16Bin) ->
+  ?MLOG(?LOG_LEVEL_DEBUG, "SEND SMS CALLED BY PID:~p TARGETNO:~p UTFBIN:~p ~n", [Pid, TargetNo, UTF16Bin]),
   gen_server:call(Pid, {send_sms, TargetNo, UTF16Bin}, 20000).
 
-read_inbox_sms(Pid)->
-  gen_server:call(Pid,read_inbox_sms,20000).
+read_inbox_sms(Pid) ->
+  gen_server:call(Pid, read_inbox_sms, 20000).
 
-send_ussd(Pid, StrToSend) when is_pid(Pid),is_list(StrToSend) ,erlang: is_binary(StrToSend)->
-  send_ussd(Pid,binary_to_list(StrToSend));
-send_ussd(Pid, StrToSend) when is_pid(Pid),is_list(StrToSend) ->
+send_ussd(Pid, StrToSend) when is_pid(Pid), is_list(StrToSend), erlang:is_binary(StrToSend) ->
+  send_ussd(Pid, binary_to_list(StrToSend));
+send_ussd(Pid, StrToSend) when is_pid(Pid), is_list(StrToSend) ->
   case gen_server:call(Pid, {send_ussd, StrToSend}, 20000) of
     {ok, {_USSDSTATUS, TXT, _ENCODING}} ->
       TXT;
@@ -82,6 +82,8 @@ send_ussd(Pid, StrToSend) when is_pid(Pid),is_list(StrToSend) ->
   end.
 register_handler(Pid, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT) ->
   gen_server:call(Pid, {add_handler, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT}).
+register_to_inform_every_message(Pid, Module, Func, Args) ->
+  gen_server:call(Pid, {inform_on_new_sms, Module, Func, Args}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -178,7 +180,8 @@ stick_parts([IDENTIFER | IDENTIFER_LIST], ECHList, COMPLETED_MESSAGES) ->
       MSG = #normal_message{
         sender = SENDERNO,
         message_timeepch = TIMEPOCH,
-        message_utf_16 = erlang:iolist_to_binary( lists:map(fun({_, _, _, _, #pdu{tpdu = #tpdu_deliver{tp_ud = UD}}}) -> UD end, MSG_PARTS1)),
+        message_utf_16 = erlang:iolist_to_binary(lists:map(fun({_, _, _, _, #pdu{tpdu = #tpdu_deliver{tp_ud = UD}}}) ->
+          UD end, MSG_PARTS1)),
         modem_message_index = lists:map(fun({MSGINX, _, _, _, _}) -> MSGINX end, MSG_PARTS1)
       },
       CPMSG = lists:append(COMPLETED_MESSAGES, [MSG]),
@@ -349,16 +352,16 @@ handle_call(get_antenna_status, _, State = #state{gsm_state_machine_pid = S}) ->
     last_send_data_epoch = utils:get_timestamp()
   },
   {reply, R, NewState};
-handle_call(read_inbox_sms,_,State =#state{low_level_inbox = LLI,gsm_state_machine_pid =  GSMStateMachine}) ->
-  LLM= case gen_statem:call(GSMStateMachine, {send, 'CMGL', 4}, 20000) of
-                {ok,ok}->[];
-                {ok,L} when is_list(L)->L
-              end,
-  ?MLOG(?LOG_LEVEL_DEBUG,"INBOX MESSAGES ARE:~p~n",[LLM]),
+handle_call(read_inbox_sms, _, State = #state{low_level_inbox = LLI, gsm_state_machine_pid = GSMStateMachine}) ->
+  LLM = case gen_statem:call(GSMStateMachine, {send, 'CMGL', 4}, 20000) of
+          {ok, ok} -> [];
+          {ok, L} when is_list(L) -> L
+        end,
+  ?MLOG(?LOG_LEVEL_DEBUG, "INBOX MESSAGES ARE:~p~n", [LLM]),
   NewState = State#state{
     low_level_inbox = LLI ++ LLM
   },
-  {reply,ok,NewState};
+  {reply, ok, NewState};
 
 handle_call({remove_handler, PID}, _, State = #state{sms_handlers_pid = PIDS}) ->
   ?MLOG(?LOG_LEVEL_DEBUG, "REMOVE HANDLER FOR PID:~p~n", [PID]),
@@ -378,6 +381,14 @@ handle_call({add_handler, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SU
     fun() ->
       wait_to_incoming_sms(GENS, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT)
     end),
+  NewPIDS = [PID | PIDS],
+  NewState = State#state{sms_handlers_pid = NewPIDS},
+  ?MLOG(?LOG_LEVEL_DEBUG, "NEW PIDS:~p", [NewState#state.sms_handlers_pid]),
+  {reply, ok, NewState};
+handle_call({inform_on_new_sms, Module, Func, Args}, _, State = #state{sms_handlers_pid = PIDS}) ->
+  PID = spawn(fun() ->
+    waiting_to_new_sms(Module, Func, Args)
+              end),
   NewPIDS = [PID | PIDS],
   NewState = State#state{sms_handlers_pid = NewPIDS},
   ?MLOG(?LOG_LEVEL_DEBUG, "NEW PIDS:~p", [NewState#state.sms_handlers_pid]),
@@ -429,18 +440,18 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term()).
-terminate(_Reason, _State = #state{time_ref_interval = TRef, time_ref_newsms = TRefNEWSMS, time_ref_process_llinbox = TREF_LLINBOX,gsm_state_machine_pid = GSM, modem_connector_pid = MCPID}) ->
-  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called,Reason:~p state:~p~n----------------~n",[_Reason,_State]),
+terminate(_Reason, _State = #state{time_ref_interval = TRef, time_ref_newsms = TRefNEWSMS, time_ref_process_llinbox = TREF_LLINBOX, gsm_state_machine_pid = GSM, modem_connector_pid = MCPID}) ->
+  ?MLOG(?LOG_LEVEL_DEBUG, "~n--------------~nterminate called,Reason:~p state:~p~n----------------~n", [_Reason, _State]),
 
-  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, SEND EXIT TO PROCEESS GSM:~p",[GSM]),
-  exit(GSM,_Reason),
-  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, SEND EXIT TO PROCEESS modem_connector_pid:~p",[MCPID]),
-  exit(MCPID,_Reason),
-  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, CANCEL TIMER TRef:~p",[TRef]),
+  ?MLOG(?LOG_LEVEL_DEBUG, "~n--------------~nterminate called, SEND EXIT TO PROCEESS GSM:~p", [GSM]),
+  exit(GSM, _Reason),
+  ?MLOG(?LOG_LEVEL_DEBUG, "~n--------------~nterminate called, SEND EXIT TO PROCEESS modem_connector_pid:~p", [MCPID]),
+  exit(MCPID, _Reason),
+  ?MLOG(?LOG_LEVEL_DEBUG, "~n--------------~nterminate called, CANCEL TIMER TRef:~p", [TRef]),
   timer:cancel(TRef),
-  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, CANCEL TIMER NEW SMS:~p",[TRefNEWSMS]),
+  ?MLOG(?LOG_LEVEL_DEBUG, "~n--------------~nterminate called, CANCEL TIMER NEW SMS:~p", [TRefNEWSMS]),
   timer:cancel(TRefNEWSMS),
-  ?MLOG(?LOG_LEVEL_DEBUG,"~n--------------~nterminate called, CANCEL TIMER LLINBOX:~p",[TREF_LLINBOX]),
+  ?MLOG(?LOG_LEVEL_DEBUG, "~n--------------~nterminate called, CANCEL TIMER LLINBOX:~p", [TREF_LLINBOX]),
   timer:cancel(TREF_LLINBOX),
   ok.
 
@@ -461,6 +472,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+waiting_to_new_sms(Module, Func, Args) ->
+  receive
+    Msg when is_record(Msg, normal_message) ->
+      ?MLOG(?LOG_LEVEL_DEBUG, "NORMAL MESSAGE ARRIVED, LETS CALL TARGET MODULE ~n", []),
+      apply(Module, Func, Args ++ [Msg]),
+      waiting_to_new_sms(Module, Func, Args);
+    _ ->
+      ?MLOG(?LOG_LEVEL_DEBUG, "ANOTHER MESSAGE ARRAIVED WHICH WE ARE NOT WAITING FoR<<<<~n", []),
+      waiting_to_new_sms(Module, Func, Args)
+  end.
 
 wait_to_incoming_sms(GENSERVERPID, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCESSFUNC, SUCCESSARGS, FAILMODULE, FAILFUNC, FAILARGS, TIMEOUT) ->
   START = utils:get_timestamp(),
@@ -481,12 +502,12 @@ wait_to_incoming_sms(GENSERVERPID, SENDER_Regex, TXTRegex, SUCCESSMODULE, SUCCES
   receive
     MSGORIG = #normal_message{sender = SENDER, message_utf_16 = MSG} ->
       ?MLOG(?LOG_LEVEL_DEBUG, "HANDLER  CALLED WITH MSG:~p SENDER_REGEX:~p TXTRegex:~p ~n", [MSG, SENDER_Regex, TXTRegex]),
-      case re:run(SENDER,SENDER_Regex) of
+      case re:run(SENDER, SENDER_Regex) of
         nomatch ->
           ?MLOG(?LOG_LEVEL_DEBUG, "SENDER NOT MATCHED ~n", []),
 
           B();
-        _ -> case re:run( MSG,TXTRegex) of
+        _ -> case re:run(MSG, TXTRegex) of
                nomatch ->
                  ?MLOG(?LOG_LEVEL_DEBUG, "TEXT NOT MATCHED~n", []),
                  B();
