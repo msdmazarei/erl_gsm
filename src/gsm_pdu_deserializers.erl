@@ -169,7 +169,7 @@ tpdu(FirstOctet,B) when is_record(FirstOctet,first_octet_deliver)->
            <<HL , HEADERBIN:HL/binary ,DATA/binary>> = R5,
            H = dh(HEADERBIN),
            UDHBitLen = (HL+1)*8,
-           Padding =  7*ceil(UDHBitLen/7) - UDHBitLen ,
+           Padding =  7*utils:ceiling(UDHBitLen/7) - UDHBitLen ,
            {H,DATA,Padding};
            _-> {#dh{length_of_user_data_header = 0,headers = []},R5,0}
        end,
