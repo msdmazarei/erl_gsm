@@ -8,5 +8,7 @@
 %%%-------------------------------------------------------------------
 -author("msd").
 -define(LOG_LEVEL_DEBUG,debug).
--define(MLOG(LEVEL,MSG),io:fwrite(MSG)).
--define(MLOG(LEVEL,FORMAT,DATA),io:fwrite(FORMAT,DATA)).
+%%-define(MLOG(LEVEL,MSG),io:fwrite(MSG)).
+-define(MLOG(LEVEL,MSG),ok).
+%%-define(MLOG(LEVEL,FORMAT,DATA),io:fwrite(FORMAT,DATA)).
+-define(MLOG(LEVEL,FORMAT,DATA),ok).
